@@ -162,65 +162,78 @@ COUNTY_CONFIGS = {
     # ----------------------------------------------------------------
     # Duval County, FL - Duval County Property Appraiser (DCPAO)
     #
-    # Public search tool confirmed at:
-    #   https://paopropertysearch.coj.net/Basic/Search.aspx
-    # (URL provided by user and independently confirmed via search of
-    # jacksonville.gov's Property Appraiser department page.)
+    # Public search tool: https://paopropertysearch.coj.net/Basic/Search.aspx
     #
-    # This site is a classic ASP.NET WebForms application, so the pattern
-    # below (GET the form to harvest __VIEWSTATE/__EVENTVALIDATION, then
-    # POST the search) is structurally correct for how these sites work.
+    # This site (and Railway/most cloud IPs generally) can't be reached
+    # directly from the environments used to build/verify this config -
+    # every attempt got a connection timeout, not just an HTTP block.
+    # Real field names below were instead recovered from the Wayback
+    # Machine's archived copies of Search.aspx and Results.aspx (recent
+    # snapshots, June 2026), which confirmed two things the ORIGINAL
+    # placeholder guess got wrong:
     #
-    # !! NOT YET FIELD-VERIFIED !!
-    # The build environment used to create this config could not reach
-    # paopropertysearch.coj.net directly (outbound requests were refused
-    # by the site, likely blocking datacenter/bot IP ranges), so the
-    # exact form field NAMES below (name_param, extra_static_params) and
-    # the results-table CSS selectors (row_selector, fields) are
-    # best-guess placeholders, NOT confirmed against live HTML.
+    #  1. name_param/submit field names were just wrong (see below for
+    #     the real ones, read straight off the archived <input> tags).
+    #  2. Clicking "Search" is NOT an in-place AJAX/JS update - it's a
+    #     classic ASP.NET "cross-page postback": the onclick handler
+    #     (WebForm_DoPostBackWithOptions(..., "Results.aspx", ...))
+    #     just points the form's action at a DIFFERENT page
+    #     (Results.aspx) before the browser's native form submission
+    #     runs. That's a plain HTML form POST under the hood - no JS
+    #     execution is needed to reproduce it, just POSTing to
+    #     Results.aspx (not Search.aspx) with the harvested hidden
+    #     fields. This is why search_url below differs from
+    #     search_page_url, unlike every other aspnet_postback county.
     #
-    # Before relying on this for real leads, run:
-    #     python main.py --inspect-county "Duval FL"
-    # from a machine that CAN reach the site. It prints every <input>
-    # field name/id on the search form (which tells you the real
-    # name_param) and, if you pass --inspect-sample-name, also runs one
-    # search and prints the results HTML structure so you can fix
-    # row_selector/fields in ~2 minutes. See README "Adding a New
-    # County" step 5 for what to look for.
+    # !! ROW-PARSING STILL UNVERIFIED !!
+    # The Wayback snapshots only ever showed the empty "No Results
+    # Found" state (archive.org can't submit search forms with real
+    # names), so the exact results-table markup is still a best guess:
+    # row_selector targets the <div class="gv"> results container seen
+    # in the archived HTML (empty when there are no results, so a real
+    # <table> presumably renders there for a match), and "property_address"
+    # uses from_index (join every cell from index 2 onward) rather than
+    # a specific column count/order, since the "Sort Results By" dropdown
+    # confirmed the address is split across several columns (StreetNumber/
+    # StreetPrefix/StreetName/StreetSuffix/StreetUnit/City/ZipCode) whose
+    # on-screen left-to-right order isn't confirmed - joining everything
+    # after RE#/Owner Name at least avoids guessing that order wrong in a
+    # way that silently drops data. parse_results() logs a snippet of the
+    # raw response if this ever parses 0 rows without hitting the
+    # no-results marker, so a single live run's logs are enough to fix
+    # this if it's wrong - see that function in scraper.py.
     # ----------------------------------------------------------------
     "duval|fl": {
         "display_name": "Duval County, FL",
         "search_type": "aspnet_postback",
         "search_page_url": "https://paopropertysearch.coj.net/Basic/Search.aspx",
-        "search_url": "https://paopropertysearch.coj.net/Basic/Search.aspx",
+        "search_url": "https://paopropertysearch.coj.net/Basic/Results.aspx",
         "method": "POST",
-        # PLACEHOLDER - confirm real field name via --inspect-county.
-        "name_param": "ctl00$MainContent$txtOwnerName",
+        "name_param": "ctl00$cphBody$tbName",
         "extra_static_params": {
-            # PLACEHOLDER - confirm real submit-button field name/value.
-            "ctl00$MainContent$btnSearch": "Search",
+            "ctl00$cphBody$bSearch": "Search",
         },
         "hidden_field_selector": 'input[type="hidden"]',
-        "row_selector": "table#MainContent_gvResults tr.resultRow",
+        "row_selector": "div.gv table tr:has(td)",
         "fields": {
             "parcel_id": {"index": 0},
             "owner_name_found": {"index": 1},
-            "property_address": {"index": 2},
-            "mailing_address": {"index": 3},
+            "property_address": {"from_index": 2},
         },
-        "no_results_markers": [
-            "no records found",
-            "no results found",
-            "0 records",
-        ],
+        "no_results_markers": ["no results found"],
         "verified": False,
         "verification_note": (
-            "Structurally correct ASP.NET postback pattern; exact field "
-            "names/selectors unconfirmed because the build environment "
-            "could not reach the live site. Run "
-            "`python main.py --inspect-county \"Duval FL\"` to verify/fix "
-            "name_param, extra_static_params, row_selector and fields "
-            "before production use."
+            "Form field names and the Search->Results.aspx cross-page-"
+            "postback mechanism were confirmed via Wayback Machine "
+            "snapshots (no live access from any build environment tried "
+            "so far). Row parsing (row_selector/fields) is still a best "
+            "guess - no archived snapshot had real result rows to check "
+            "against. If a live run logs a 'row_selector/fields may be "
+            "wrong' warning, paste the logged HTML snippet back in to "
+            "get this fixed, or run "
+            "`python main.py --inspect-county \"Duval FL\" "
+            "--inspect-sample-name \"Smith John\"` from a machine that "
+            "can reach the site."
         ),
     },
     # ----------------------------------------------------------------

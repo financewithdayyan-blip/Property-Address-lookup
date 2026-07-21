@@ -139,7 +139,7 @@ export default function UploadPage() {
       </div>
       <p className="subtitle">
         Upload a leads CSV. Currently supported: Pinellas, Hillsborough, Lee,
-        and Palm Beach counties, FL.
+        Palm Beach, and Duval counties, FL.
       </p>
       <div className="card">
         {error && <div className="error">{error}</div>}

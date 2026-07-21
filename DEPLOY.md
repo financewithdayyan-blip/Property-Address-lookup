@@ -92,11 +92,14 @@ idle, and the worker handles that without dying).
 
 ## Known limitations (by design, see the project plan)
 
-- **Duval County (and any non-ArcGIS county) isn't supported in the web
-  version.** It needs Selenium/a real browser, which doesn't run on
-  Railway's default Python environment. Rows for unsupported counties come
-  back as a clear `ERROR` with an explanation, not a crash. Use the CLI
-  (`main.py`) for those counties instead.
+- **A county whose search_type is `selenium` isn't supported in the web
+  version.** That needs a real browser, which doesn't run on Railway's
+  default Python environment. Duval County was assumed to need this but
+  turned out not to (see its `verification_note` in county_configs.py) -
+  it runs here as a plain `aspnet_postback` county like any other. Rows
+  for a genuinely unsupported county come back as a clear `ERROR` with an
+  explanation, not a crash. Use the CLI (`main.py`, which does support
+  `selenium` counties) for those instead.
 - **No login.** A job's status/download page is only protected by its URL
   containing an unguessable UUID. Fine for a single-operator tool holding
   your own lead data; add a shared password in front of it if that

@@ -33,11 +33,15 @@ POLL_INTERVAL_SECONDS = 2.0
 DELAY_CENTER_SECONDS = 3.0  # same default as the CLI's --delay
 DB_RECONNECT_WAIT_SECONDS = 5.0
 
-# Only search_types that don't need a real browser can run here - Duval
-# (and anything else needing Selenium) isn't supported in the web version
-# yet: no Chrome/chromedriver on this host, and it's not worth adding
-# until a county actually needs it. See DEPLOY.md.
-WEB_SUPPORTED_SEARCH_TYPES = {"arcgis_query"}
+# Only search_types that don't need a real browser can run here - a county
+# whose search_type is "selenium" isn't supported in the web version yet:
+# no Chrome/chromedriver on this host, and it's not worth adding until a
+# county actually needs a JS-rendered page (Duval's search - despite
+# looking JS-driven at a glance - turned out to be a plain server-rendered
+# ASP.NET postback once inspected, so it runs here as "aspnet_postback"
+# like any other non-JS county; see the verification_note on "duval|fl"
+# in county_configs.py). See DEPLOY.md.
+WEB_SUPPORTED_SEARCH_TYPES = {"arcgis_query", "aspnet_postback"}
 
 
 class DBMultiMatchWriter:

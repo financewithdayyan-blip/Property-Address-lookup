@@ -167,12 +167,22 @@ def _extract_field(row, rule: dict) -> str:
     if "selector" in rule:
         el = row.select_one(rule["selector"])
         return el.get_text(strip=True) if el else ""
+    cells = row.find_all(["td", "th"])
     if "index" in rule:
-        cells = row.find_all(["td", "th"])
         idx = rule["index"]
         if idx < len(cells):
             return cells[idx].get_text(strip=True)
         return ""
+    if "from_index" in rule:
+        # Joins every remaining cell from this index to the end of the
+        # row - for a county whose results table splits an address across
+        # several columns (street number/name/suffix/unit/city/zip) in an
+        # unconfirmed order/count, this at least captures all of it in a
+        # readable (if not perfectly ordered) string rather than requiring
+        # exact column-index knowledge we don't have.
+        idx = rule["from_index"]
+        parts = [c.get_text(strip=True) for c in cells[idx:]]
+        return " ".join(p for p in parts if p)
     return ""
 
 
@@ -201,6 +211,19 @@ def parse_results(html: str, config: dict, source_url: str) -> List[PropertyMatc
         # Skip fully-empty rows (header rows sometimes match loose selectors).
         if any([match.owner_name_found, match.property_address, match.parcel_id]):
             matches.append(match)
+
+    if not matches and config.get("verified") is False:
+        # For an unverified county, 0 parsed rows with no "no results"
+        # marker matched is ambiguous: either a genuine empty result, or
+        # row_selector/fields guessed wrong against the real page. Log a
+        # snippet so a live run's logs are enough to fix the config,
+        # without needing another round-trip to re-fetch and inspect.
+        get_logger().warning(
+            "%s: 0 rows parsed and no no_results_markers matched - "
+            "row_selector/fields may be wrong (county marked unverified). "
+            "First 1500 chars of response:\n%s",
+            config.get("display_name", "county"), html[:1500],
+        )
     return matches
 
 
