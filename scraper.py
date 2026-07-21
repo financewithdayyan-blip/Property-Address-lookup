@@ -313,13 +313,25 @@ def _build_owner_where(owner_fields: List[str], owner_name: str) -> str:
 def _owner_hypotheses(tokens: List[str]) -> List[tuple[str, str]]:
     """(surname, given) candidate pairs for an input name of 2+ tokens.
 
-    Tries both dominant conventions: last token is the surname (so the
-    given name is the very first token, ignoring any middle tokens in
-    between - "First [Middle] Last"), and first token is the surname (so
-    the given name is the token right after it - "Last First [Middle]").
-    A set() so a plain 2-token name doesn't produce the same pair twice.
+    Tries every ADJACENT pair of tokens, in both orders, as a candidate
+    (surname, given) anchor - not just the first/last positions. This
+    covers the usual "First [Middle] Last" / "Last First [Middle]"
+    orderings (which only need the boundary tokens), but also a case
+    found live: a lead list that concatenates two co-owners' full names
+    together with no separator at all, e.g. input "ESCOBAR STEVEN MUNOZ
+    DIAZ VALENTINA" for two owners actually stored as "MUNOZ ESCOBAR
+    STEVEN" (note: even the surname/given order within that first name
+    doesn't match the input's) and "DIAZ VALENTINA" - the real,
+    findable 2-token surname/given pair for the second owner sits in
+    the *middle* of the token list, not at either end, so only checking
+    the boundary tokens would silently miss it (0 candidates, not a
+    mismatch) exactly like the plain OWNER2 case did.
     """
-    return list({(tokens[-1], tokens[0]), (tokens[0], tokens[1])})
+    pairs = set()
+    for i in range(len(tokens) - 1):
+        pairs.add((tokens[i], tokens[i + 1]))
+        pairs.add((tokens[i + 1], tokens[i]))
+    return list(pairs)
 
 
 def _join_fields(attributes: dict, fields: List[str], sep: str) -> str:
