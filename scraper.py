@@ -390,7 +390,14 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
     }
     url = arc["query_url"]
     logger.debug("ArcGIS query: %s where=%r", url, where)
-    resp = _request_with_retry(session, "GET", url, params=params)
+    # POST, not GET: a long concatenated name (several co-owners run
+    # together with no separator) can push _owner_hypotheses() past a
+    # dozen candidate pairs, and the resulting WHERE clause easily
+    # exceeds URL length limits as a GET query string - found live, this
+    # failed outright with an HTTP 404 rather than just missing a match.
+    # ArcGIS REST endpoints accept the same params as a POST body, which
+    # has no such length limit.
+    resp = _request_with_retry(session, "POST", url, data=params)
 
     try:
         data = resp.json()

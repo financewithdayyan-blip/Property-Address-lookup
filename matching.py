@@ -72,21 +72,52 @@ def _normalize_description(raw: str) -> str:
     return _DESC_WHITESPACE_RE.sub(" ", text).strip()
 
 
-def _legal_desc_confirms(match: PropertyMatch, property_description_input: str) -> bool:
-    """Does this one candidate's own legal description strongly match the
-    input row's property_description? Used to confirm/upgrade a single
-    already-identified best candidate (unlike the MULTIPLE MATCHES
-    cross-check below, which picks a winner out of several) - e.g. a
-    name that only clears LOW_CONFIDENCE because the county only kept a
-    middle initial ("DOOLEY, DAWN P" vs input "Dooley Dawn Patricia")
-    still deserves to be FOUND if the legal description independently
-    confirms it's the right property.
+def _find_legal_desc_match(scored, property_description_input: str, logger):
+    """Does exactly one scored candidate's own legal description strongly
+    match the input row's property_description? If so, return its
+    (MatchResult, PropertyMatch) pair - an independent, often very strong
+    signal that should be able to resolve a row even when the NAME score
+    alone can't, which matters most exactly when the name score can't be
+    trusted: a lead list that concatenates several co-owners' full names
+    together with no separator (e.g. "KNAPIK JOHN RICHARD RIZZO MICHAEL
+    RIZZO ERIC RIZZO RENEE" for four people) will always score the real
+    single-owner match poorly against the whole messy input string,
+    however good the search was at finding it - found live, this landed
+    well below NO_MATCH territory even though the right record was right
+    there in the results. So this checks EVERY scored candidate
+    (regardless of its name-score classification), not just "plausible"
+    ones. Deliberately conservative - if zero or more than one candidate
+    crosses the threshold, this can't disambiguate any further, so the
+    caller falls back to ordinary name-score-based classification.
     """
-    norm_input = _normalize_description(property_description_input)
-    norm_found = _normalize_description(match.legal_description)
-    if not norm_input or not norm_found:
-        return False
-    return fuzz.token_set_ratio(norm_input, norm_found) >= DESC_MATCH_THRESHOLD
+    norm_desc_input = _normalize_description(property_description_input)
+    if not norm_desc_input:
+        return None
+
+    hits = []
+    for result, m in scored:
+        norm_desc_found = _normalize_description(m.legal_description)
+        if not norm_desc_found:
+            continue
+        desc_score = fuzz.token_set_ratio(norm_desc_input, norm_desc_found)
+        if desc_score >= DESC_MATCH_THRESHOLD:
+            hits.append((desc_score, result, m))
+
+    if len(hits) == 1:
+        desc_score, result, m = hits[0]
+        logger.info(
+            "  resolved via legal description cross-check (name_score=%.1f, desc_score=%.1f): "
+            "input_desc=%r matched candidate legal=%r",
+            result.score, desc_score, property_description_input, m.legal_description,
+        )
+        return result, m
+    if len(hits) > 1:
+        logger.info(
+            "  legal description cross-check found %d candidates above "
+            "threshold (%.0f) - can't disambiguate further",
+            len(hits), DESC_MATCH_THRESHOLD,
+        )
+    return None
 
 
 @dataclass
@@ -171,6 +202,23 @@ def classify_and_build_row(
                 len(matches) - MAX_MATCHES_TO_LOG, MAX_MATCHES_TO_LOG,
             )
 
+    # Legal-description cross-check runs BEFORE name-score classification,
+    # and covers every candidate regardless of name score - see
+    # _find_legal_desc_match()'s docstring for why a hard name-score
+    # cutoff shouldn't block this. Only resolves things when there's
+    # exactly one strong hit; otherwise falls through unchanged.
+    desc_hit = _find_legal_desc_match(scored, property_description_input, logger)
+    if desc_hit is not None:
+        result, m = desc_hit
+        row.match_score = f"{result.score:.1f}"
+        row.owner_name_found = m.owner_name_found
+        row.property_address = m.property_address
+        row.mailing_address = m.mailing_address
+        row.parcel_id = m.parcel_id
+        row.source_url = m.source_url
+        row.status = "FOUND"
+        return row
+
     # Status is decided by the gap between the best and second-best score,
     # not by how many raw rows came back or how many cross a fixed bar -
     # a broad surname-substring search can return dozens of "SMITH, X"
@@ -183,21 +231,13 @@ def classify_and_build_row(
     second_score = ranked[1][0].score if len(ranked) > 1 else 0.0
 
     if top_result.classification != "NO_MATCH" and (top_result.score - second_score) >= CLEAR_WINNER_MARGIN:
-        status = "FOUND" if top_result.classification == "MATCH" else "LOW CONFIDENCE"
-        if status == "LOW CONFIDENCE" and _legal_desc_confirms(top_match, property_description_input):
-            logger.info(
-                "  upgraded LOW CONFIDENCE to FOUND via legal description cross-check: "
-                "input_desc=%r matched candidate legal=%r (name_score=%.1f)",
-                property_description_input, top_match.legal_description, top_result.score,
-            )
-            status = "FOUND"
         row.match_score = f"{top_result.score:.1f}"
         row.owner_name_found = top_match.owner_name_found
         row.property_address = top_match.property_address
         row.mailing_address = top_match.mailing_address
         row.parcel_id = top_match.parcel_id
         row.source_url = top_match.source_url
-        row.status = status
+        row.status = "FOUND" if top_result.classification == "MATCH" else "LOW CONFIDENCE"
         return row
 
     if top_result.classification == "NO_MATCH":
@@ -212,47 +252,8 @@ def classify_and_build_row(
         return row
 
     # Best candidate is plausible but not clearly ahead of the runner-up -
-    # genuinely ambiguous by name alone. If the input row supplied a
-    # property_description, use it as an independent tie-breaker: does
-    # exactly one candidate's own legal description match it? If so,
-    # that's a strong enough signal to resolve this as FOUND rather than
-    # leaving it for manual review. Deliberately conservative - if zero or
-    # more than one candidate crosses the threshold, this can't
-    # disambiguate any further than the name match already did, so it
-    # falls through to MULTIPLE MATCHES unchanged.
-    norm_desc_input = _normalize_description(property_description_input)
-    if norm_desc_input:
-        desc_hits = []
-        for result, m in scored:
-            norm_desc_found = _normalize_description(m.legal_description)
-            if not norm_desc_found:
-                continue
-            desc_score = fuzz.token_set_ratio(norm_desc_input, norm_desc_found)
-            if desc_score >= DESC_MATCH_THRESHOLD:
-                desc_hits.append((desc_score, result, m))
-
-        if len(desc_hits) == 1:
-            desc_score, result, m = desc_hits[0]
-            logger.info(
-                "  resolved MULTIPLE MATCHES via legal description cross-check: "
-                "input_desc=%r matched candidate legal=%r (desc_score=%.1f, name_score=%.1f)",
-                property_description_input, m.legal_description, desc_score, result.score,
-            )
-            row.match_score = f"{result.score:.1f}"
-            row.owner_name_found = m.owner_name_found
-            row.property_address = m.property_address
-            row.mailing_address = m.mailing_address
-            row.parcel_id = m.parcel_id
-            row.source_url = m.source_url
-            row.status = "FOUND"
-            return row
-        elif len(desc_hits) > 1:
-            logger.info(
-                "  legal description cross-check found %d candidates above "
-                "threshold (%.0f) - still ambiguous, leaving as MULTIPLE MATCHES",
-                len(desc_hits), DESC_MATCH_THRESHOLD,
-            )
-
+    # genuinely ambiguous by name alone, and the legal-description check
+    # above already had its shot at resolving this. Leave for manual review.
     row.status = "MULTIPLE MATCHES"
     row.match_score = f"{top_result.score:.1f}"
     row.owner_name_found = top_match.owner_name_found
