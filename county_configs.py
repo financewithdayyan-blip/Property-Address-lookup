@@ -278,6 +278,123 @@ COUNTY_CONFIGS = {
             "still need a wider query if they come back NOT FOUND."
         ),
     },
+    # ----------------------------------------------------------------
+    # Hillsborough County, FL - Hillsborough County Property Appraiser (HCPA)
+    #
+    # HCPA's own ArcGIS Server (gis.hcpafl.org) exposes a public parcel
+    # layer used by its own web map. No mailing address or legal
+    # description field is exposed on this "NonConfidential" layer (likely
+    # withheld for homestead-exempt owners) - property address only.
+    #
+    # !! LIVE-VERIFIED !!
+    # A real query for surname "SMITH" returned actual owner/address/
+    # parcel records. Owner1 format is "LAST FIRST[ MIDDLE/SUFFIX]" with
+    # NO comma (unlike Pinellas) - confirmed live, which is exactly why
+    # _build_owner_where() tries both the comma and the plain-space
+    # convention rather than assuming one.
+    # ----------------------------------------------------------------
+    "hillsborough|fl": {
+        "display_name": "Hillsborough County, FL",
+        "search_type": "arcgis_query",
+        "arcgis": {
+            "query_url": "https://gis.hcpafl.org/arcgis/rest/services/Webmaps/HillsboroughFL_WebParcels/MapServer/0/query",
+            "owner_field": "Owner1",
+            "out_fields": ["Owner1", "Owner2", "FullAddress", "SiteCity", "SiteZip", "folio", "strap"],
+            "owner_name_fields": ["Owner1", "Owner2"],
+            "property_address_compose": {"street": "FullAddress", "zip": "SiteZip"},
+            "mailing_address_compose": {},
+            "parcel_id_field": "folio",
+            "max_results": 50,
+        },
+        "verified": True,
+        "verification_note": (
+            "Live-tested successfully. This layer (WebParcels_NonConfidential) "
+            "has no mailing-address or legal-description fields, so those "
+            "output columns will always be blank for this county - if that "
+            "data is needed, look for HCPA's confidential/full parcel layer "
+            "(likely requires different access) and add the fields here."
+        ),
+    },
+    # ----------------------------------------------------------------
+    # Lee County, FL - Lee County Property Appraiser
+    #
+    # Lee County publishes its parcel layer (with owner + mailing +
+    # legal-description fields) as a hosted ArcGIS Online FeatureServer
+    # (services2.arcgis.com), found via the "Lee County Parcels" item on
+    # Lee County GIS's ArcGIS Hub site.
+    #
+    # !! LIVE-VERIFIED !!
+    # A real query for surname "SMITH" returned actual owner/address/
+    # mailing/legal-description records. O_NAME format is "LAST FIRST[
+    # MIDDLE/SUFFIX]" with no comma, same as Hillsborough.
+    # ----------------------------------------------------------------
+    "lee|fl": {
+        "display_name": "Lee County, FL",
+        "search_type": "arcgis_query",
+        "arcgis": {
+            "query_url": "https://services2.arcgis.com/LvWGAAhHwbCJ2GMP/arcgis/rest/services/Lee_County_Parcels/FeatureServer/0/query",
+            "owner_field": "O_NAME",
+            "out_fields": [
+                "O_NAME", "O_OTHERS", "SITEADDR", "SITECITY", "SITEZIP",
+                "O_ADDR1", "O_ADDR2", "O_CITY", "O_STATE", "O_ZIP", "STRAP", "LEGAL",
+            ],
+            "owner_name_fields": ["O_NAME", "O_OTHERS"],
+            "property_address_compose": {"street": "SITEADDR", "city": "SITECITY", "zip": "SITEZIP"},
+            "mailing_address_compose": {
+                "street": "O_ADDR1", "street2": "O_ADDR2",
+                "city": "O_CITY", "state": "O_STATE", "zip": "O_ZIP",
+            },
+            "parcel_id_field": "STRAP",
+            "legal_description_field": "LEGAL",
+            "max_results": 50,
+        },
+        "verified": True,
+        "verification_note": "Live-tested successfully.",
+    },
+    # ----------------------------------------------------------------
+    # Palm Beach County, FL - Palm Beach County Property Appraiser (PBCPAO)
+    #
+    # Hosted ArcGIS Online FeatureServer (services1.arcgis.com) - "Parcels
+    # downloaded from PBC GIS and Owners tabular information" per its own
+    # service description, which also warns this schema may be replaced
+    # by a newer one from PBC's open data site at some point; if this
+    # county starts returning odd results, re-check the field names here
+    # against the live service first.
+    #
+    # !! LIVE-VERIFIED !!
+    # A real query for surname "SMITH" returned actual owner/address/
+    # mailing/legal-description records. OWNER_NAME1 format is "LAST
+    # FIRST[ MIDDLE/SUFFIX]" with no comma. Legal description is split
+    # across three fixed-width columns (LEGAL1/LEGAL2/LEGAL3), concatenated
+    # by _compose_legal_description() in scraper.py.
+    # ----------------------------------------------------------------
+    "palm beach|fl": {
+        "display_name": "Palm Beach County, FL",
+        "search_type": "arcgis_query",
+        "arcgis": {
+            "query_url": "https://services1.arcgis.com/RTiKiFNGzgAobBzy/arcgis/rest/services/Parcels/FeatureServer/0/query",
+            "owner_field": "OWNER_NAME1",
+            "out_fields": [
+                "OWNER_NAME1", "OWNER_NAME2", "SITE_ADDR_STR", "MUNICIPALITY",
+                "PADDR1", "PADDR2", "CITYNAME", "STATE", "ZIP1", "ZIP2",
+                "PARCEL_NUMBER", "LEGAL1", "LEGAL2", "LEGAL3",
+            ],
+            "owner_name_fields": ["OWNER_NAME1", "OWNER_NAME2"],
+            "property_address_compose": {"street": "SITE_ADDR_STR", "city": "MUNICIPALITY"},
+            "mailing_address_compose": {
+                "street": "PADDR1", "street2": "PADDR2",
+                "city": "CITYNAME", "state": "STATE", "zip": "ZIP1",
+            },
+            "parcel_id_field": "PARCEL_NUMBER",
+            "legal_description_field": ["LEGAL1", "LEGAL2", "LEGAL3"],
+            "max_results": 50,
+        },
+        "verified": True,
+        "verification_note": (
+            "Live-tested successfully. Mailing zip is truncated to the "
+            "5-digit ZIP1 (ZIP2, the +4 suffix, isn't concatenated on)."
+        ),
+    },
 }
 
 # ----------------------------------------------------------------------

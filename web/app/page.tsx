@@ -2,28 +2,21 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { SUPPORTED_COUNTIES } from "@/lib/counties";
 
 type Step = "select" | "map";
 
 interface Mapping {
   owner_name: string;
-  county: string;
-  state: string;
   property_description: string; // "" means not mapped (optional field)
 }
 
-const REQUIRED_FIELDS: { key: keyof Mapping; label: string; aliases: string[] }[] = [
-  { key: "owner_name", label: "Owner Name", aliases: ["ownername", "owner", "name", "fullname"] },
-  { key: "county", label: "County", aliases: ["county"] },
-  { key: "state", label: "State", aliases: ["state", "st"] },
-];
-
+const OWNER_NAME_ALIASES = ["ownername", "owner", "name", "fullname"];
 const DESCRIPTION_ALIASES = ["propertydescription", "description", "desc", "notes", "propertynotes"];
 
-// Splits into word tokens rather than one joined blob, so e.g. "County
-// Name" matches the "county" alias via its token but "Real Estate Notes"
-// doesn't false-positive-match "state" the way naive substring matching
-// on "realestatenotes" would.
+// Splits into word tokens rather than one joined blob, so e.g. "Owner
+// Name" matches via its token but a column like "Notesheet" doesn't
+// false-positive-match "notes" the way naive substring matching would.
 function tokenize(h: string): string[] {
   return h.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 }
@@ -40,11 +33,13 @@ function guessMapping(headers: string[]): Mapping {
     return byToken?.raw ?? "";
   };
   return {
-    owner_name: findMatch(REQUIRED_FIELDS[0].aliases),
-    county: findMatch(REQUIRED_FIELDS[1].aliases),
-    state: findMatch(REQUIRED_FIELDS[2].aliases),
+    owner_name: findMatch(OWNER_NAME_ALIASES),
     property_description: findMatch(DESCRIPTION_ALIASES),
   };
+}
+
+function countyKey(county: string, state: string): string {
+  return `${county}|${state}`;
 }
 
 export default function UploadPage() {
@@ -53,12 +48,8 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [sampleRow, setSampleRow] = useState<Record<string, string> | null>(null);
-  const [mapping, setMapping] = useState<Mapping>({
-    owner_name: "",
-    county: "",
-    state: "",
-    property_description: "",
-  });
+  const [mapping, setMapping] = useState<Mapping>({ owner_name: "", property_description: "" });
+  const [targetCounty, setTargetCounty] = useState("");
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +94,9 @@ export default function UploadPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
+    const target = SUPPORTED_COUNTIES.find((c) => countyKey(c.county, c.state) === targetCounty);
+    if (!target) return;
+
     setSubmitting(true);
     setError(null);
 
@@ -112,8 +106,8 @@ export default function UploadPage() {
       "mapping",
       JSON.stringify({
         owner_name: mapping.owner_name,
-        county: mapping.county,
-        state: mapping.state,
+        county: target.county,
+        state: target.state,
         property_description: mapping.property_description || null,
       })
     );
@@ -133,7 +127,7 @@ export default function UploadPage() {
     }
   }
 
-  const canSubmit = mapping.owner_name && mapping.county && mapping.state;
+  const canSubmit = mapping.owner_name && targetCounty;
 
   return (
     <main className="narrow">
@@ -144,7 +138,8 @@ export default function UploadPage() {
         </div>
       </div>
       <p className="subtitle">
-        Upload a leads CSV. Currently supported: Pinellas County, FL.
+        Upload a leads CSV. Currently supported: Pinellas, Hillsborough, Lee,
+        and Palm Beach counties, FL.
       </p>
       <div className="card">
         {error && <div className="error">{error}</div>}
@@ -169,31 +164,41 @@ export default function UploadPage() {
         {step === "map" && (
           <form onSubmit={handleSubmit}>
             <p className="subtitle">
-              Match your CSV&apos;s columns to what we need. Owner Name, County, and
-              State are required; Property Description is optional. If it&apos;s a
+              Pick which county to search, and which column in your CSV has
+              the owner name. Property Description is optional - if it&apos;s a
               legal description (e.g. &quot;Lot 5 Block 2 Sunset Park&quot;), we&apos;ll use
               it to automatically pick the right property when a search turns up
               multiple matches for the same name.
             </p>
 
-            {REQUIRED_FIELDS.map(({ key, label }) => (
-              <div className="field-row" key={key}>
-                <label>{label} *</label>
-                <select
-                  value={mapping[key]}
-                  onChange={(e) => setMapping({ ...mapping, [key]: e.target.value })}
-                  required
-                >
-                  <option value="">-- Select a column --</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                      {sampleRow?.[h] ? ` (e.g. "${sampleRow[h]}")` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
+            <div className="field-row">
+              <label>Target County *</label>
+              <select value={targetCounty} onChange={(e) => setTargetCounty(e.target.value)} required>
+                <option value="">-- Select a county --</option>
+                {SUPPORTED_COUNTIES.map((c) => (
+                  <option key={countyKey(c.county, c.state)} value={countyKey(c.county, c.state)}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field-row">
+              <label>Owner Name *</label>
+              <select
+                value={mapping.owner_name}
+                onChange={(e) => setMapping({ ...mapping, owner_name: e.target.value })}
+                required
+              >
+                <option value="">-- Select a column --</option>
+                {headers.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                    {sampleRow?.[h] ? ` (e.g. "${sampleRow[h]}")` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="field-row">
               <label>Property Description (optional)</label>

@@ -212,48 +212,68 @@ def _search_html_get(config: dict, owner_name: str, session: requests.Session) -
 def _build_owner_where(owner_field: str, owner_name: str) -> str:
     """WHERE clause for an ArcGIS owner-name search.
 
-    County parcel layers store owner names as "LAST, FIRST[ MI]" (verified
-    live for Pinellas, and the standard convention across US county
-    GIS/property-appraiser systems). We can't tell from a two-word input
-    alone whether it's "First Last" or already "Last First" - real lead
-    lists use both conventions - so a naive single-token substring anchor
-    can guess wrong and search on a common first name instead of the
-    actual surname.
+    County parcel layers store owner names as "LAST" followed by the
+    given name(s) - but the separator convention differs per county
+    (Pinellas: "POULOS, ALEXANDER" with a comma; Hillsborough: "SMITH
+    DAVID A TRUSTEE", just a space - verified live for both). We also
+    can't tell from a two-word *input* name alone whether it's "First
+    Last" or already "Last First" - real lead lists use both conventions.
+    Guessing either of these wrong the naive way (a single substring
+    anchor on one token) causes two distinct failures found live:
+    anchoring on a common first name instead of the actual surname pulls
+    in unrelated owners who share that first name, and even anchoring on
+    the *correct* surname as a bare substring can still blow up on
+    unrelated names that merely contain it (e.g. "POULOS" substring-
+    matches "PETROPOULOS", "GIANOPOULOS", every other Greek "-poulos"
+    surname - in a Greek-heavy area like Tarpon Springs that's enough
+    noise to push the real "POULOS, ALEXANDER" record past the API's row
+    cap entirely).
 
-    That's bad in two ways: it pulls in unrelated owners who happen to
-    share that first name, AND - worse, found live - a substring search
-    for a real surname can itself blow up on totally unrelated names that
-    merely contain it, e.g. "POULOS" also substring-matches "PETROPOULOS",
-    "GIANOPOULOS", every other Greek "-poulos" surname; in a Greek-heavy
-    area like Tarpon Springs that's enough noise to push the actual "POULOS,
-    ALEXANDER" record past the API's row cap entirely.
-
-    Fix: for a two-token input, OR together *anchored* "LAST, FIRST%"
-    prefix patterns for both possible orderings, e.g. for tokens
-    ["POULOS", "ALEXANDER"]: `LIKE 'ALEXANDER, POULOS%' OR LIKE 'POULOS,
-    ALEXANDER%'`. Exactly one of those matches the real "LAST, FIRST"
-    record (and only that record, plus true namesakes) - a prefix match
-    on "SURNAME," never matches a different surname that merely contains
-    those letters, unlike a bare substring search. Falls back to the old
-    substring behavior for single-token input (business/trust names, or a
-    name with no clear split).
+    Fix: OR together anchored "SURNAME<sep>GIVEN%" prefix patterns for
+    both possible token orderings AND both separator conventions (a
+    space, or a comma followed by anything - covering "LAST,FIRST" and
+    "LAST, FIRST" alike). A prefix match anchored on "SURNAME " or
+    "SURNAME," never matches a different surname that merely contains
+    those letters, unlike a bare substring search, and requiring the
+    given name too (not just the surname) keeps the candidate set small
+    even for a common surname. Falls back to a plain substring search for
+    single-token input (business/trust names, or a name with no clear
+    split).
     """
     tokens = [t for t in owner_name.strip().upper().split() if t]
     if len(tokens) < 2:
         token = (tokens[0] if tokens else owner_name.strip().upper()).replace("'", "''")
         return f"UPPER({owner_field}) LIKE '%{token}%'"
 
-    first = tokens[0].replace("'", "''")
-    last = tokens[-1].replace("'", "''")
-    return (
-        f"(UPPER({owner_field}) LIKE '{last}, {first}%' "
-        f"OR UPPER({owner_field}) LIKE '{first}, {last}%')"
-    )
+    t1 = tokens[0].replace("'", "''")
+    t2 = tokens[-1].replace("'", "''")
+
+    patterns = []
+    for surname, given in ((t1, t2), (t2, t1)):
+        patterns.append(f"UPPER({owner_field}) LIKE '{surname} {given}%'")
+        patterns.append(f"UPPER({owner_field}) LIKE '{surname},%{given}%'")
+    return "(" + " OR ".join(patterns) + ")"
+
+
+def _join_fields(attributes: dict, fields: List[str], sep: str) -> str:
+    parts = [str(attributes.get(f) or "").strip() for f in fields]
+    return sep.join(p for p in parts if p)
 
 
 def _compose_owner_name(attributes: dict, fields: List[str]) -> str:
-    parts = [str(attributes.get(f) or "").strip() for f in fields]
-    return " & ".join(p for p in parts if p)
+    return _join_fields(attributes, fields, " & ")
+
+
+def _compose_legal_description(attributes: dict, fields) -> str:
+    """`fields` is a single field name or a list - some counties split the
+    legal description across several fixed-width columns (e.g. Palm
+    Beach's LEGAL1/LEGAL2/LEGAL3), which just get concatenated in order.
+    """
+    if not fields:
+        return ""
+    if isinstance(fields, str):
+        fields = [fields]
+    return _join_fields(attributes, fields, " ")
 
 
 def _compose_address(attributes: dict, compose: dict) -> str:
@@ -287,6 +307,7 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
         "outFields": ",".join(arc["out_fields"]),
         "f": "json",
         "resultRecordCount": arc.get("max_results", 50),
+        "returnGeometry": "false",
     }
     url = arc["query_url"]
     logger.debug("ArcGIS query: %s where=%r", url, where)
@@ -311,10 +332,7 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
                 mailing_address=_compose_address(attrs, arc.get("mailing_address_compose", {})),
                 parcel_id=str(attrs.get(arc.get("parcel_id_field")) or ""),
                 source_url=source_url,
-                legal_description=(
-                    str(attrs.get(arc["legal_description_field"]) or "")
-                    if arc.get("legal_description_field") else ""
-                ),
+                legal_description=_compose_legal_description(attrs, arc.get("legal_description_field")),
             )
         )
     return matches
