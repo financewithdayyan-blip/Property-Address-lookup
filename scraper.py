@@ -436,6 +436,19 @@ def search(
 
     rate_limiter.wait()
 
+    # Strip status/suffix words (DECEASED, TRUSTEE, ESTATE, JR, ...) before
+    # searching at all, not just when scoring the result - a county search
+    # box or query filter can fail to find a real record if a lead list's
+    # extra word is included verbatim. arcgis_query's _build_owner_where()
+    # already does this internally, but html_get/aspnet_postback/selenium
+    # just submit owner_name as typed into the county's own search
+    # form/API, so it needs stripping here too - found live: Duval's own
+    # search returned nothing for "Williams Patricia Deceased" but found
+    # "Williams Patricia" immediately once "Deceased" was dropped.
+    tokens = [t for t in owner_name.strip().split() if t.upper() not in SUFFIXES]
+    if tokens:
+        owner_name = " ".join(tokens)
+
     if not config.get("verified", True):
         logger.warning(
             "%s config is UNVERIFIED (%s) - results may be wrong if "
