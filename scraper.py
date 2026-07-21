@@ -58,6 +58,7 @@ class PropertyMatch:
     mailing_address: str = ""
     parcel_id: str = ""
     source_url: str = ""
+    legal_description: str = ""
 
 
 @dataclass
@@ -208,16 +209,46 @@ def _search_html_get(config: dict, owner_name: str, session: requests.Session) -
     return resp.text, url
 
 
-def _extract_surname(owner_name: str) -> str:
-    """Best-effort surname anchor for a "FIRST LAST" input name (the
-    convention used by the sample lead CSV) - ArcGIS parcel layers store
-    OWNER1 as "LAST, FIRST MI", so we search on the last input token as a
-    substring match rather than requiring an exact/ordered match. Doesn't
-    handle already-"LAST FIRST"-ordered input or multi-word business/trust
-    names specially; see README for how to adjust per-county if needed.
+def _build_owner_where(owner_field: str, owner_name: str) -> str:
+    """WHERE clause for an ArcGIS owner-name search.
+
+    County parcel layers store owner names as "LAST, FIRST[ MI]" (verified
+    live for Pinellas, and the standard convention across US county
+    GIS/property-appraiser systems). We can't tell from a two-word input
+    alone whether it's "First Last" or already "Last First" - real lead
+    lists use both conventions - so a naive single-token substring anchor
+    can guess wrong and search on a common first name instead of the
+    actual surname.
+
+    That's bad in two ways: it pulls in unrelated owners who happen to
+    share that first name, AND - worse, found live - a substring search
+    for a real surname can itself blow up on totally unrelated names that
+    merely contain it, e.g. "POULOS" also substring-matches "PETROPOULOS",
+    "GIANOPOULOS", every other Greek "-poulos" surname; in a Greek-heavy
+    area like Tarpon Springs that's enough noise to push the actual "POULOS,
+    ALEXANDER" record past the API's row cap entirely.
+
+    Fix: for a two-token input, OR together *anchored* "LAST, FIRST%"
+    prefix patterns for both possible orderings, e.g. for tokens
+    ["POULOS", "ALEXANDER"]: `LIKE 'ALEXANDER, POULOS%' OR LIKE 'POULOS,
+    ALEXANDER%'`. Exactly one of those matches the real "LAST, FIRST"
+    record (and only that record, plus true namesakes) - a prefix match
+    on "SURNAME," never matches a different surname that merely contains
+    those letters, unlike a bare substring search. Falls back to the old
+    substring behavior for single-token input (business/trust names, or a
+    name with no clear split).
     """
-    tokens = [t for t in owner_name.strip().split() if t]
-    return tokens[-1] if tokens else owner_name.strip()
+    tokens = [t for t in owner_name.strip().upper().split() if t]
+    if len(tokens) < 2:
+        token = (tokens[0] if tokens else owner_name.strip().upper()).replace("'", "''")
+        return f"UPPER({owner_field}) LIKE '%{token}%'"
+
+    first = tokens[0].replace("'", "''")
+    last = tokens[-1].replace("'", "''")
+    return (
+        f"(UPPER({owner_field}) LIKE '{last}, {first}%' "
+        f"OR UPPER({owner_field}) LIKE '{first}, {last}%')"
+    )
 
 
 def _compose_owner_name(attributes: dict, fields: List[str]) -> str:
@@ -244,12 +275,12 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
     no HTML parsing, no browser needed) - used by counties whose GIS
     parcel data is exposed this way (e.g. Pinellas County, FL). Bypasses
     parse_results()/row_selector entirely since there's no HTML involved.
+    See _build_owner_where() for how the WHERE clause is built.
     """
     logger = get_logger()
     arc = config["arcgis"]
     owner_field = arc["owner_field"]
-    surname = _extract_surname(owner_name).upper().replace("'", "''")
-    where = f"UPPER({owner_field}) LIKE '%{surname}%'"
+    where = _build_owner_where(owner_field, owner_name)
 
     params = {
         "where": where,
@@ -280,6 +311,10 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
                 mailing_address=_compose_address(attrs, arc.get("mailing_address_compose", {})),
                 parcel_id=str(attrs.get(arc.get("parcel_id_field")) or ""),
                 source_url=source_url,
+                legal_description=(
+                    str(attrs.get(arc["legal_description_field"]) or "")
+                    if arc.get("legal_description_field") else ""
+                ),
             )
         )
     return matches

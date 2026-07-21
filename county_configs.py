@@ -246,7 +246,7 @@ COUNTY_CONFIGS = {
             "owner_field": "OWNER1",
             "out_fields": [
                 "OWNER1", "OWNER2", "SITE_ADDRESS", "SITE_CITY", "SITE_STATE", "SITE_ZIP",
-                "OWNADD_1", "OWNADD_2", "OWNCITY", "OWNSTATE", "OWNZIP", "PARCELID", "STRAP",
+                "OWNADD_1", "OWNADD_2", "OWNCITY", "OWNSTATE", "OWNZIP", "PARCELID", "STRAP", "LEGAL",
             ],
             "owner_name_fields": ["OWNER1", "OWNER2"],
             "property_address_compose": {
@@ -257,21 +257,25 @@ COUNTY_CONFIGS = {
                 "city": "OWNCITY", "state": "OWNSTATE", "zip": "OWNZIP",
             },
             "parcel_id_field": "PARCELID",
+            # Layer field confirmed live (GET .../MapServer/1?f=json): "LEGAL"
+            # (255-char string). Used to auto-resolve MULTIPLE MATCHES when
+            # the input CSV supplies a property_description - see
+            # matching.py's legal-description cross-check.
+            "legal_description_field": "LEGAL",
             "max_results": 50,
         },
         "verified": True,
         "verification_note": (
-            "Live-tested successfully. Search strategy uses the LAST WORD "
-            "of owner_name_input as a surname anchor (assumes 'FIRST LAST' "
-            "input ordering, matching the sample CSV format), then fuzzy-"
-            "matches all candidates the county returns against the full "
-            "input name. Owner records for trusts/businesses/entities "
-            "whose name doesn't end in a surname-like token (e.g. 'ABC "
-            "HOLDINGS LLC' anchors on 'LLC', which won't match anything) "
-            "will come back NOT FOUND - if your lead list has many "
-            "entity-owned properties, consider widening the query (e.g. "
-            "anchor on the first word instead, or OR multiple tokens "
-            "together) in county_configs.py."
+            "Live-tested successfully. Search strategy (see "
+            "scraper._build_owner_where()) queries for OWNER1 LIKE "
+            "'LAST, FIRST%' using BOTH possible readings of a two-token "
+            "input name, since real lead lists mix 'First Last' and "
+            "'Last First' ordering and OWNER1 is always stored 'LAST, "
+            "FIRST[ MI]' - then fuzzy-matches whatever candidates come "
+            "back against the full input name. A single-token input (or "
+            "a trust/business name like 'ABC HOLDINGS LLC') falls back to "
+            "a plain substring search, so entity-owned properties may "
+            "still need a wider query if they come back NOT FOUND."
         ),
     },
 }
@@ -337,6 +341,10 @@ TEMPLATE_ARCGIS_QUERY = {
         "property_address_compose": {"street": "SITE_ADDRESS"},
         "mailing_address_compose": {"street": "MAIL_ADDRESS"},
         "parcel_id_field": "PARCEL_ID",
+        # Optional: a legal-description field (add its name to out_fields
+        # too), used to auto-resolve MULTIPLE MATCHES when the input CSV
+        # supplies a property_description. Omit if the layer has none.
+        "legal_description_field": None,
         "max_results": 50,
     },
     "verified": False,

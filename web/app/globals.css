@@ -148,6 +148,45 @@ button:disabled {
   margin-bottom: 4px;
 }
 
+.card + .card {
+  margin-top: 20px;
+}
+
+.card h3 {
+  font-size: 0.95rem;
+  margin: 0 0 12px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #ececef;
+}
+
+th {
+  color: #666;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .field-row {
   margin-bottom: 16px;
 }

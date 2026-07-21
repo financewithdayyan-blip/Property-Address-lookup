@@ -116,7 +116,10 @@ def process_row(conn, logger, sessions: Dict[str, SessionBundle], row: dict) -> 
         return
 
     multi_writer = DBMultiMatchWriter()
-    result = classify_and_build_row(owner_name_input, county, state, matches, logger, multi_writer)
+    result = classify_and_build_row(
+        owner_name_input, county, state, matches, logger, multi_writer,
+        property_description_input=row.get("property_description") or "",
+    )
     db.write_row_result(conn, row["id"], row["job_id"], result)
     if multi_writer.rows:
         db.insert_candidates(conn, row["id"], multi_writer.rows)

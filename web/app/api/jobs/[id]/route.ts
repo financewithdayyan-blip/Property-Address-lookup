@@ -35,11 +35,22 @@ export async function GET(
     args: [id],
   });
 
+  const rows = await db.execute({
+    sql: `SELECT row_index, owner_name_input, county, state, processing_status,
+                 owner_name_found, property_address, mailing_address, parcel_id,
+                 result_status, match_score
+          FROM job_rows
+          WHERE job_id = ?
+          ORDER BY row_index`,
+    args: [id],
+  });
+
   return NextResponse.json({
     job,
     statusCounts: Object.fromEntries(
       statusCounts.rows.map((r) => [r.result_status as string, Number(r.count)])
     ),
     errors: errors.rows,
+    rows: rows.rows,
   });
 }

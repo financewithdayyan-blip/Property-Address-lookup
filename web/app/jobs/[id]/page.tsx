@@ -10,6 +10,20 @@ interface JobRowError {
   error_message: string;
 }
 
+interface JobRow {
+  row_index: number;
+  owner_name_input: string;
+  county: string;
+  state: string;
+  processing_status: "pending" | "claimed" | "done";
+  owner_name_found: string;
+  property_address: string;
+  mailing_address: string;
+  parcel_id: string;
+  result_status: string;
+  match_score: string;
+}
+
 interface JobStatusResponse {
   job: {
     id: string;
@@ -19,6 +33,7 @@ interface JobStatusResponse {
   };
   statusCounts: Record<string, number>;
   errors: JobRowError[];
+  rows: JobRow[];
   error?: string;
 }
 
@@ -75,9 +90,11 @@ export default function JobStatusPage() {
     );
   }
 
-  const { job, statusCounts, errors } = data;
+  const { job, statusCounts, errors, rows } = data;
   const pct = job.total_rows > 0 ? Math.round((job.processed_rows / job.total_rows) * 100) : 0;
   const hasMultiMatches = (statusCounts["MULTIPLE MATCHES"] ?? 0) > 0;
+  const queueRows = rows.filter((r) => r.processing_status !== "done");
+  const resultRows = rows.filter((r) => r.processing_status === "done");
 
   return (
     <main>
@@ -131,6 +148,72 @@ export default function JobStatusPage() {
           </div>
         )}
       </div>
+
+      {queueRows.length > 0 && (
+        <div className="card">
+          <h3>Queue ({queueRows.length} waiting)</h3>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Owner name</th>
+                  <th>County</th>
+                  <th>State</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {queueRows.map((r) => (
+                  <tr key={r.row_index}>
+                    <td>{r.row_index + 1}</td>
+                    <td>{r.owner_name_input}</td>
+                    <td>{r.county}</td>
+                    <td>{r.state}</td>
+                    <td>{r.processing_status === "claimed" ? "Searching..." : "Waiting"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {resultRows.length > 0 && (
+        <div className="card">
+          <h3>Results ({resultRows.length} done)</h3>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Owner name (input)</th>
+                  <th>Owner name (found)</th>
+                  <th>Property address</th>
+                  <th>Mailing address</th>
+                  <th>Parcel ID</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resultRows.map((r) => (
+                  <tr key={r.row_index}>
+                    <td>{r.row_index + 1}</td>
+                    <td>{r.owner_name_input}</td>
+                    <td>{r.owner_name_found}</td>
+                    <td>{r.property_address}</td>
+                    <td>{r.mailing_address}</td>
+                    <td>{r.parcel_id}</td>
+                    <td>{r.result_status}</td>
+                    <td>{r.match_score}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

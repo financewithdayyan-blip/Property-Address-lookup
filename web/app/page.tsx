@@ -161,7 +161,10 @@ export default function UploadPage() {
           <form onSubmit={handleSubmit}>
             <p className="subtitle">
               Match your CSV&apos;s columns to what we need. Owner Name, County, and
-              State are required; Property Description is optional.
+              State are required; Property Description is optional. If it&apos;s a
+              legal description (e.g. &quot;Lot 5 Block 2 Sunset Park&quot;), we&apos;ll use
+              it to automatically pick the right property when a search turns up
+              multiple matches for the same name.
             </p>
 
             {REQUIRED_FIELDS.map(({ key, label }) => (

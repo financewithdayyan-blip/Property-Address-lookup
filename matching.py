@@ -15,8 +15,11 @@ csv.DictWriter and a Postgres-backed adapter both work unchanged.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+from rapidfuzz import fuzz
 
 import name_matcher
 from scraper import PropertyMatch
@@ -45,6 +48,28 @@ MAX_MATCHES_TO_LOG = 25
 # enough ahead of the runner-up) is auto-FOUND; anything closer is left as
 # MULTIPLE MATCHES for a human to review.
 CLEAR_WINNER_MARGIN = 15.0
+
+# When a search comes back MULTIPLE MATCHES and the input row supplied a
+# property_description (legal description, e.g. "LOT 5 BLK 2 SUNSET PARK"),
+# each candidate's own legal description (when the county exposes one - see
+# "legal_description_field" in county_configs.py) is fuzz-compared against
+# it as a second, independent signal to break the tie. token_set_ratio
+# (rather than token_sort_ratio) because legal descriptions commonly differ
+# in length - a user's shorthand is often a subset of the county's full
+# platted description - so word-subset overlap matters more than an exact
+# whole-string ratio.
+DESC_MATCH_THRESHOLD = 80.0
+
+_DESC_PUNCT_RE = re.compile(r"[^A-Z0-9 ]")
+_DESC_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalize_description(raw: str) -> str:
+    if not raw:
+        return ""
+    text = raw.upper().strip()
+    text = _DESC_PUNCT_RE.sub(" ", text)
+    return _DESC_WHITESPACE_RE.sub(" ", text).strip()
 
 
 @dataclass
@@ -86,6 +111,7 @@ def classify_and_build_row(
     matches: list[PropertyMatch],
     logger,
     multi_match_writer: Optional[MultiMatchWriter],
+    property_description_input: str = "",
 ) -> OutputRow:
     row = OutputRow(owner_name_input=owner_name_input, county=county, state=state)
 
@@ -161,7 +187,47 @@ def classify_and_build_row(
         return row
 
     # Best candidate is plausible but not clearly ahead of the runner-up -
-    # genuinely ambiguous.
+    # genuinely ambiguous by name alone. If the input row supplied a
+    # property_description, use it as an independent tie-breaker: does
+    # exactly one candidate's own legal description match it? If so,
+    # that's a strong enough signal to resolve this as FOUND rather than
+    # leaving it for manual review. Deliberately conservative - if zero or
+    # more than one candidate crosses the threshold, this can't
+    # disambiguate any further than the name match already did, so it
+    # falls through to MULTIPLE MATCHES unchanged.
+    norm_desc_input = _normalize_description(property_description_input)
+    if norm_desc_input:
+        desc_hits = []
+        for result, m in scored:
+            norm_desc_found = _normalize_description(m.legal_description)
+            if not norm_desc_found:
+                continue
+            desc_score = fuzz.token_set_ratio(norm_desc_input, norm_desc_found)
+            if desc_score >= DESC_MATCH_THRESHOLD:
+                desc_hits.append((desc_score, result, m))
+
+        if len(desc_hits) == 1:
+            desc_score, result, m = desc_hits[0]
+            logger.info(
+                "  resolved MULTIPLE MATCHES via legal description cross-check: "
+                "input_desc=%r matched candidate legal=%r (desc_score=%.1f, name_score=%.1f)",
+                property_description_input, m.legal_description, desc_score, result.score,
+            )
+            row.match_score = f"{result.score:.1f}"
+            row.owner_name_found = m.owner_name_found
+            row.property_address = m.property_address
+            row.mailing_address = m.mailing_address
+            row.parcel_id = m.parcel_id
+            row.source_url = m.source_url
+            row.status = "FOUND"
+            return row
+        elif len(desc_hits) > 1:
+            logger.info(
+                "  legal description cross-check found %d candidates above "
+                "threshold (%.0f) - still ambiguous, leaving as MULTIPLE MATCHES",
+                len(desc_hits), DESC_MATCH_THRESHOLD,
+            )
+
     row.status = "MULTIPLE MATCHES"
     row.match_score = f"{top_result.score:.1f}"
     row.owner_name_found = top_match.owner_name_found
