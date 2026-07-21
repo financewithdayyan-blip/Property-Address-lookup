@@ -209,7 +209,7 @@ def _search_html_get(config: dict, owner_name: str, session: requests.Session) -
     return resp.text, url
 
 
-def _build_owner_where(owner_field: str, owner_name: str) -> str:
+def _build_owner_where(owner_fields: List[str], owner_name: str) -> str:
     """WHERE clause for an ArcGIS owner-name search.
 
     County parcel layers store owner names as "LAST" followed by the
@@ -239,20 +239,55 @@ def _build_owner_where(owner_field: str, owner_name: str) -> str:
     even for a common surname. Falls back to a plain substring search for
     single-token input (business/trust names, or a name with no clear
     split).
+
+    `owner_fields` is every field the search should try (e.g. OWNER1 AND
+    OWNER2), not just the primary one - a second owner is routinely only
+    present in the second field (e.g. "OWNER1: TURNEY, NELSON T JR /
+    OWNER2: TURNEY, LYNDA"), and searching only the first field means a
+    lead for that second owner never comes back as a candidate at all -
+    found live, and worse than a mismatch since there's no ambiguous
+    candidate for the classifier to even weigh; it's silently NOT FOUND.
+
+    A 3+-token input (a middle name, e.g. "DOOLEY DAWN PATRICIA") needs
+    its own handling: county records commonly only keep a middle
+    *initial* or drop it entirely ("DOOLEY, DAWN P"), so anchoring on the
+    first-and-last tokens as a surname/given pair - "DOOLEY"/"PATRICIA" -
+    misses it just as completely as the OWNER2 case (found live: 0
+    candidates, not a mismatch). _owner_hypotheses() below adds the
+    "surname is the first token, given name is the very next token"
+    reading alongside the original "surname is the last token, given
+    name is the first token" one, so the true given name (the token
+    adjacent to whichever token is actually the surname) gets tried
+    regardless of trailing middle names.
     """
     tokens = [t for t in owner_name.strip().upper().split() if t]
-    if len(tokens) < 2:
-        token = (tokens[0] if tokens else owner_name.strip().upper()).replace("'", "''")
-        return f"UPPER({owner_field}) LIKE '%{token}%'"
 
-    t1 = tokens[0].replace("'", "''")
-    t2 = tokens[-1].replace("'", "''")
+    field_patterns = []
+    for field in owner_fields:
+        if len(tokens) < 2:
+            token = (tokens[0] if tokens else owner_name.strip().upper()).replace("'", "''")
+            field_patterns.append(f"UPPER({field}) LIKE '%{token}%'")
+            continue
 
-    patterns = []
-    for surname, given in ((t1, t2), (t2, t1)):
-        patterns.append(f"UPPER({owner_field}) LIKE '{surname} {given}%'")
-        patterns.append(f"UPPER({owner_field}) LIKE '{surname},%{given}%'")
-    return "(" + " OR ".join(patterns) + ")"
+        for surname, given in _owner_hypotheses(tokens):
+            surname = surname.replace("'", "''")
+            given = given.replace("'", "''")
+            field_patterns.append(f"UPPER({field}) LIKE '{surname} {given}%'")
+            field_patterns.append(f"UPPER({field}) LIKE '{surname},%{given}%'")
+
+    return "(" + " OR ".join(field_patterns) + ")"
+
+
+def _owner_hypotheses(tokens: List[str]) -> List[tuple[str, str]]:
+    """(surname, given) candidate pairs for an input name of 2+ tokens.
+
+    Tries both dominant conventions: last token is the surname (so the
+    given name is the very first token, ignoring any middle tokens in
+    between - "First [Middle] Last"), and first token is the surname (so
+    the given name is the token right after it - "Last First [Middle]").
+    A set() so a plain 2-token name doesn't produce the same pair twice.
+    """
+    return list({(tokens[-1], tokens[0]), (tokens[0], tokens[1])})
 
 
 def _join_fields(attributes: dict, fields: List[str], sep: str) -> str:
@@ -300,7 +335,7 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
     logger = get_logger()
     arc = config["arcgis"]
     owner_field = arc["owner_field"]
-    where = _build_owner_where(owner_field, owner_name)
+    where = _build_owner_where(arc.get("owner_name_fields", [owner_field]), owner_name)
 
     params = {
         "where": where,

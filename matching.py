@@ -72,6 +72,23 @@ def _normalize_description(raw: str) -> str:
     return _DESC_WHITESPACE_RE.sub(" ", text).strip()
 
 
+def _legal_desc_confirms(match: PropertyMatch, property_description_input: str) -> bool:
+    """Does this one candidate's own legal description strongly match the
+    input row's property_description? Used to confirm/upgrade a single
+    already-identified best candidate (unlike the MULTIPLE MATCHES
+    cross-check below, which picks a winner out of several) - e.g. a
+    name that only clears LOW_CONFIDENCE because the county only kept a
+    middle initial ("DOOLEY, DAWN P" vs input "Dooley Dawn Patricia")
+    still deserves to be FOUND if the legal description independently
+    confirms it's the right property.
+    """
+    norm_input = _normalize_description(property_description_input)
+    norm_found = _normalize_description(match.legal_description)
+    if not norm_input or not norm_found:
+        return False
+    return fuzz.token_set_ratio(norm_input, norm_found) >= DESC_MATCH_THRESHOLD
+
+
 @dataclass
 class OutputRow:
     owner_name_input: str
@@ -166,13 +183,21 @@ def classify_and_build_row(
     second_score = ranked[1][0].score if len(ranked) > 1 else 0.0
 
     if top_result.classification != "NO_MATCH" and (top_result.score - second_score) >= CLEAR_WINNER_MARGIN:
+        status = "FOUND" if top_result.classification == "MATCH" else "LOW CONFIDENCE"
+        if status == "LOW CONFIDENCE" and _legal_desc_confirms(top_match, property_description_input):
+            logger.info(
+                "  upgraded LOW CONFIDENCE to FOUND via legal description cross-check: "
+                "input_desc=%r matched candidate legal=%r (name_score=%.1f)",
+                property_description_input, top_match.legal_description, top_result.score,
+            )
+            status = "FOUND"
         row.match_score = f"{top_result.score:.1f}"
         row.owner_name_found = top_match.owner_name_found
         row.property_address = top_match.property_address
         row.mailing_address = top_match.mailing_address
         row.parcel_id = top_match.parcel_id
         row.source_url = top_match.source_url
-        row.status = "FOUND" if top_result.classification == "MATCH" else "LOW CONFIDENCE"
+        row.status = status
         return row
 
     if top_result.classification == "NO_MATCH":
