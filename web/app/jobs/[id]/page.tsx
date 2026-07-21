@@ -59,6 +59,10 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${STATUS_BADGE_CLASS[status] ?? "badge-notfound"}`}>{status}</span>;
 }
 
+function Cell({ value }: { value: string }) {
+  return value ? <>{value}</> : <span className="cell-muted">&mdash;</span>;
+}
+
 export default function JobStatusPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
@@ -218,11 +222,11 @@ export default function JobStatusPage() {
                   <th>#</th>
                   <th>Owner name (input)</th>
                   <th>Owner name (found)</th>
+                  <th>Status</th>
+                  <th>Score</th>
                   <th>Property address</th>
                   <th>Mailing address</th>
                   <th>Parcel ID</th>
-                  <th>Status</th>
-                  <th>Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,14 +234,24 @@ export default function JobStatusPage() {
                   <tr key={r.row_index}>
                     <td>{r.row_index + 1}</td>
                     <td>{r.owner_name_input}</td>
-                    <td>{r.owner_name_found}</td>
-                    <td>{r.property_address}</td>
-                    <td>{r.mailing_address}</td>
-                    <td>{r.parcel_id}</td>
+                    <td>
+                      <Cell value={r.owner_name_found} />
+                    </td>
                     <td>
                       <StatusBadge status={r.result_status} />
                     </td>
-                    <td>{r.match_score}</td>
+                    <td>
+                      <Cell value={r.match_score} />
+                    </td>
+                    <td>
+                      <Cell value={r.property_address} />
+                    </td>
+                    <td>
+                      <Cell value={r.mailing_address} />
+                    </td>
+                    <td>
+                      <Cell value={r.parcel_id} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
