@@ -136,8 +136,13 @@ export default function UploadPage() {
   const canSubmit = mapping.owner_name && mapping.county && mapping.state;
 
   return (
-    <main>
-      <h1>Property Address Lookup</h1>
+    <main className="narrow">
+      <div className="app-header">
+        <div className="mark">PA</div>
+        <div>
+          <h1>Property Address Lookup</h1>
+        </div>
+      </div>
       <p className="subtitle">
         Upload a leads CSV. Currently supported: Pinellas County, FL.
       </p>
@@ -146,13 +151,17 @@ export default function UploadPage() {
 
         {step === "select" && (
           <>
-            <input
-              className="file-input"
-              type="file"
-              accept=".csv"
-              onChange={handleFileChange}
-              disabled={loadingPreview}
-            />
+            <label className="file-input" htmlFor="csv-file">
+              {file ? file.name : "Click to choose a CSV file, or drag one here"}
+              <input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                disabled={loadingPreview}
+                style={{ display: "none" }}
+              />
+            </label>
             {loadingPreview && <p>Reading columns...</p>}
           </>
         )}

@@ -39,6 +39,26 @@ interface JobStatusResponse {
 
 const POLL_MS = 2500;
 
+const STATUS_TILE_CLASS: Record<string, string> = {
+  FOUND: "tile-found",
+  "LOW CONFIDENCE": "tile-low",
+  "MULTIPLE MATCHES": "tile-multi",
+  "NOT FOUND": "tile-notfound",
+  ERROR: "tile-error",
+};
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  FOUND: "badge-found",
+  "LOW CONFIDENCE": "badge-low",
+  "MULTIPLE MATCHES": "badge-multi",
+  "NOT FOUND": "badge-notfound",
+  ERROR: "badge-error",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  return <span className={`badge ${STATUS_BADGE_CLASS[status] ?? "badge-notfound"}`}>{status}</span>;
+}
+
 export default function JobStatusPage() {
   const params = useParams<{ id: string }>();
   const jobId = params.id;
@@ -98,7 +118,12 @@ export default function JobStatusPage() {
 
   return (
     <main>
-      <h1>Job status</h1>
+      <div className="app-header">
+        <div className="mark">PA</div>
+        <div>
+          <h1>Job status</h1>
+        </div>
+      </div>
       <p className="subtitle">
         {job.status === "done"
           ? "Done."
@@ -117,7 +142,7 @@ export default function JobStatusPage() {
 
         <div className="status-grid">
           {Object.entries(statusCounts).map(([status, count]) => (
-            <div className="status-tile" key={status}>
+            <div className={`status-tile ${STATUS_TILE_CLASS[status] ?? ""}`} key={status}>
               <div className="count">{count}</div>
               <div className="label">{status}</div>
             </div>
@@ -170,7 +195,11 @@ export default function JobStatusPage() {
                     <td>{r.owner_name_input}</td>
                     <td>{r.county}</td>
                     <td>{r.state}</td>
-                    <td>{r.processing_status === "claimed" ? "Searching..." : "Waiting"}</td>
+                    <td>
+                      <span className={`badge ${r.processing_status === "claimed" ? "badge-searching" : "badge-waiting"}`}>
+                        {r.processing_status === "claimed" ? "Searching" : "Waiting"}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -205,7 +234,9 @@ export default function JobStatusPage() {
                     <td>{r.property_address}</td>
                     <td>{r.mailing_address}</td>
                     <td>{r.parcel_id}</td>
-                    <td>{r.result_status}</td>
+                    <td>
+                      <StatusBadge status={r.result_status} />
+                    </td>
                     <td>{r.match_score}</td>
                   </tr>
                 ))}
