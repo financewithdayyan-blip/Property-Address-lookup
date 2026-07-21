@@ -1,0 +1,14 @@
+requests>=2.31
+beautifulsoup4>=4.12
+pandas>=2.0
+rapidfuzz>=3.6
+
+# Optional: only needed for counties whose config has search_type "selenium"
+# (JS-rendered / SPA property search sites). Safe to skip installing these
+# if you're only using html_get / aspnet_postback counties.
+selenium>=4.20
+webdriver-manager>=4.0
+
+# Only needed to run worker.py (the web app's background job processor).
+# Not required for the plain CLI (main.py).
+libsql>=0.1.11

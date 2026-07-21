@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# CLI run outputs (generated, not source)
+run.log
+*_multiple_matches.csv
+
+# Node / Next.js (web/ has its own .gitignore too, this covers root-level tooling)
+node_modules/
+.next/
+
+# Secrets - never commit
+.env
+.env.local
+.env.*.local
+.vercel/
