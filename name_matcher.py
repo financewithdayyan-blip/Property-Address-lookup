@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from rapidfuzz import fuzz
 
 # Common name suffixes to strip before comparing. Order doesn't matter since
-# we remove all occurrences as whole tokens.
-_SUFFIXES = {
+# we remove all occurrences as whole tokens. Public (not _-prefixed) since
+# scraper.py also uses this to strip suffix tokens before deciding which
+# tokens are the surname/given-name anchor - see _build_owner_where().
+SUFFIXES = {
     "JR", "SR", "II", "III", "IV", "V", "ESQ", "ESQUIRE",
-    "TRUSTEE", "TRUST", "TTEE", "EST", "ESTATE",
+    "TRUSTEE", "TRUST", "TTEE", "EST", "ESTATE", "DECEASED", "DECD",
 }
 
 # Anything that isn't a letter, digit, space, or & (owner records frequently
@@ -56,7 +58,7 @@ def normalize_name(raw_name: str) -> str:
     name = _PUNCT_RE.sub(" ", name)
     name = _WHITESPACE_RE.sub(" ", name).strip()
 
-    tokens = [t for t in name.split(" ") if t and t not in _SUFFIXES]
+    tokens = [t for t in name.split(" ") if t and t not in SUFFIXES]
     return " ".join(tokens)
 
 

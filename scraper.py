@@ -27,6 +27,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from logger import get_logger
+from name_matcher import SUFFIXES
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -259,8 +260,16 @@ def _build_owner_where(owner_fields: List[str], owner_name: str) -> str:
     name is the first token" one, so the true given name (the token
     adjacent to whichever token is actually the surname) gets tried
     regardless of trailing middle names.
+
+    A trailing status/suffix word (e.g. a lead list marking someone
+    "HERRIER MICHAEL PHILIP DECEASED") needs stripping before any of the
+    above, not just at scoring time - name_matcher.match_names() already
+    strips these before comparing, but if scraper.py doesn't also strip
+    them before picking anchor tokens, a genuinely "First Last SUFFIX"
+    name (3 real tokens) gets misread as a plain 3-token name and the
+    surname/given hypotheses land on the wrong tokens entirely.
     """
-    tokens = [t for t in owner_name.strip().upper().split() if t]
+    tokens = [t for t in owner_name.strip().upper().split() if t and t not in SUFFIXES]
 
     field_patterns = []
     for field in owner_fields:
