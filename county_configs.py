@@ -367,25 +367,36 @@ COUNTY_CONFIGS = {
     # ----------------------------------------------------------------
     # Palm Beach County, FL - Palm Beach County Property Appraiser (PBCPAO)
     #
-    # Hosted ArcGIS Online FeatureServer (services1.arcgis.com) - "Parcels
-    # downloaded from PBC GIS and Owners tabular information" per its own
-    # service description, which also warns this schema may be replaced
-    # by a newer one from PBC's open data site at some point; if this
-    # county starts returning odd results, re-check the field names here
-    # against the live service first.
+    # Hosted on PBC's open-data ArcGIS org (services1.arcgis.com/
+    # ZWOoUZbtaYePLlPw), found via the "Parcels and Property Details"
+    # dataset on Palm Beach County's open-data portal
+    # (opendata2-pbcgov.opendata.arcgis.com).
+    #
+    # NOT the same service as an earlier version of this config (a
+    # different services1.arcgis.com org, RTiKiFNGzgAobBzy) - that one's
+    # own service description said it was scheduled to be replaced by a
+    # newer file "in 2023" and, live-tested, turned out to be a stale/
+    # frozen snapshot: real current owners (found via the county's own
+    # live search) simply didn't exist in it at all - e.g. "Mohtares
+    # Amy" and "Burgin Richard H" returned zero features. This wasn't
+    # caught by the original verification test because it only searched
+    # a common surname ("Smith"), which a stale dataset still has plenty
+    # of - testing a specific individual is what actually exposes a
+    # staleness problem, not a common-surname smoke test.
     #
     # !! LIVE-VERIFIED !!
-    # A real query for surname "SMITH" returned actual owner/address/
-    # mailing/legal-description records. OWNER_NAME1 format is "LAST
-    # FIRST[ MIDDLE/SUFFIX]" with no comma. Legal description is split
-    # across three fixed-width columns (LEGAL1/LEGAL2/LEGAL3), concatenated
-    # by _compose_legal_description() in scraper.py.
+    # Confirmed this org's layer returns "Mohtares Amy" and "Burgin
+    # Richard H" with the exact address/city the county's own site
+    # shows. OWNER_NAME1 format is "LAST FIRST[ MIDDLE/SUFFIX]" with no
+    # comma. Legal description is split across three fixed-width columns
+    # (LEGAL1/LEGAL2/LEGAL3), concatenated by _compose_legal_description()
+    # in scraper.py.
     # ----------------------------------------------------------------
     "palm beach|fl": {
         "display_name": "Palm Beach County, FL",
         "search_type": "arcgis_query",
         "arcgis": {
-            "query_url": "https://services1.arcgis.com/RTiKiFNGzgAobBzy/arcgis/rest/services/Parcels/FeatureServer/0/query",
+            "query_url": "https://services1.arcgis.com/ZWOoUZbtaYePLlPw/arcgis/rest/services/Parcels_and_Property_Details_WebMercator/FeatureServer/0/query",
             "owner_field": "OWNER_NAME1",
             "out_fields": [
                 "OWNER_NAME1", "OWNER_NAME2", "SITE_ADDR_STR", "MUNICIPALITY",
@@ -404,8 +415,10 @@ COUNTY_CONFIGS = {
         },
         "verified": True,
         "verification_note": (
-            "Live-tested successfully. Mailing zip is truncated to the "
-            "5-digit ZIP1 (ZIP2, the +4 suffix, isn't concatenated on)."
+            "Live-tested successfully against real, current owners (not "
+            "just a common-surname smoke test - see the staleness note "
+            "above). Mailing zip is truncated to the 5-digit ZIP1 (ZIP2, "
+            "the +4 suffix, isn't concatenated on)."
         ),
     },
 }
