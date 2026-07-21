@@ -8,6 +8,7 @@ export const OUTPUT_FIELDS = [
   "parcel_id",
   "county",
   "state",
+  "property_description",
   "status",
   "match_score",
   "source_url",

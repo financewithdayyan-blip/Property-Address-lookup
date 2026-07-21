@@ -13,7 +13,7 @@ export async function GET(
 
   const result = await db.execute({
     sql: `SELECT owner_name_input, owner_name_found, property_address,
-                 mailing_address, parcel_id, county, state,
+                 mailing_address, parcel_id, county, state, property_description,
                  result_status AS status, match_score, source_url
           FROM job_rows
           WHERE job_id = ?

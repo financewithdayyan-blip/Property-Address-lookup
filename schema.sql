@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS job_rows (
     owner_name_input      TEXT NOT NULL,
     county                TEXT NOT NULL,
     state                 TEXT NOT NULL,
+    property_description  TEXT NOT NULL DEFAULT '', -- optional user-supplied context, passthrough only (not used for searching)
     processing_status     TEXT NOT NULL DEFAULT 'pending', -- pending | claimed | done
     owner_name_found      TEXT NOT NULL DEFAULT '',
     property_address      TEXT NOT NULL DEFAULT '',

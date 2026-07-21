@@ -147,3 +147,34 @@ button:disabled {
 .error-list li {
   margin-bottom: 4px;
 }
+
+.field-row {
+  margin-bottom: 16px;
+}
+
+.field-row label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.field-row select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d0d0d5;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.secondary-btn {
+  background: #f0f0f0;
+  color: #1a1a1a;
+}
