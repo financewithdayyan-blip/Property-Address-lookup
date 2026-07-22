@@ -25,6 +25,7 @@ interface JobSummary {
 
 const OWNER_NAME_ALIASES = ["ownername", "owner", "name", "fullname"];
 const DESCRIPTION_ALIASES = ["propertydescription", "description", "desc", "notes", "propertynotes"];
+const HISTORY_POLL_MS = 4000;
 
 const JOB_STATUS_LABEL: Record<JobSummary["status"], string> = {
   pending: "Queued",
@@ -101,29 +102,48 @@ export default function UploadPage() {
 
   useEffect(() => {
     let stopped = false;
-    const target = SUPPORTED_COUNTIES.find((c) => countyKey(c.county, c.state) === historyCounty);
-    const params = new URLSearchParams();
-    if (target) {
-      params.set("county", target.county);
-      params.set("state", target.state);
-    }
-    if (historyDate) params.set("date", historyDate);
+    let timer: ReturnType<typeof setTimeout>;
 
-    setLoadingJobs(true);
-    fetch(`/api/jobs?${params.toString()}`, { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!stopped) {
-          setJobs(data.jobs ?? []);
-          setSelectedIds(new Set());
+    function buildParams() {
+      const target = SUPPORTED_COUNTIES.find((c) => countyKey(c.county, c.state) === historyCounty);
+      const params = new URLSearchParams();
+      if (target) {
+        params.set("county", target.county);
+        params.set("state", target.state);
+      }
+      if (historyDate) params.set("date", historyDate);
+      return params;
+    }
+
+    // showSpinner is only true for the initial load / a filter change - a
+    // background poll refetches quietly so a job's status can flip from
+    // Processing to Done on its own (the worker runs independently of this
+    // tab regardless; this just keeps what's on screen from going stale if
+    // you leave it open) without resetting the selection or flashing
+    // "Loading...".
+    async function load(showSpinner: boolean) {
+      if (showSpinner) setLoadingJobs(true);
+      try {
+        const res = await fetch(`/api/jobs?${buildParams().toString()}`, { cache: "no-store" });
+        const data = await res.json();
+        if (stopped) return;
+        const nextJobs: JobSummary[] = data.jobs ?? [];
+        setJobs(nextJobs);
+        if (showSpinner) setSelectedIds(new Set());
+        const stillActive = nextJobs.some((j) => j.status === "pending" || j.status === "running");
+        if (stillActive) {
+          timer = setTimeout(() => load(false), HISTORY_POLL_MS);
         }
-      })
-      .finally(() => {
-        if (!stopped) setLoadingJobs(false);
-      });
+      } finally {
+        if (showSpinner && !stopped) setLoadingJobs(false);
+      }
+    }
+
+    load(true);
 
     return () => {
       stopped = true;
+      clearTimeout(timer);
     };
   }, [historyCounty, historyDate]);
 
