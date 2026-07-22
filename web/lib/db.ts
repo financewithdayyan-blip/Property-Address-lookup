@@ -27,7 +27,7 @@ export function getDb(): Client {
 export interface JobRecord {
   id: string;
   created_at: string;
-  status: "pending" | "running" | "done";
+  status: "pending" | "running" | "done" | "cancelled";
   total_rows: number;
   processed_rows: number;
 }

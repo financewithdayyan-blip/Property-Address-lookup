@@ -155,6 +155,16 @@ button:disabled {
   background: #e2e4e9;
 }
 
+.danger-btn {
+  background: var(--red-bg);
+  color: var(--red);
+  margin-top: 12px;
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: #f9d7db;
+}
+
 .error {
   color: var(--red);
   background: var(--red-bg);

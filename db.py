@@ -106,8 +106,15 @@ def write_row_result(conn, row_id: int, job_id: str, result, error_message: Opti
         "UPDATE jobs SET processed_rows = processed_rows + 1 WHERE id = ?",
         (job_id,),
     )
+    # "status != 'cancelled'" matters here: cancelling a job only bulk-closes
+    # its still-*pending* rows (see the web app's cancel route) - a row
+    # that's already 'claimed' when the user cancels keeps running (an
+    # in-flight scrape can't be aborted mid-request) and lands here like any
+    # other completion. Without this guard, that one straggling row finishing
+    # last would flip the job's status right back to 'done', erasing the
+    # cancellation the user asked for.
     cur.execute(
-        "UPDATE jobs SET status = 'done' WHERE id = ? AND processed_rows >= total_rows",
+        "UPDATE jobs SET status = 'done' WHERE id = ? AND processed_rows >= total_rows AND status != 'cancelled'",
         (job_id,),
     )
     conn.commit()

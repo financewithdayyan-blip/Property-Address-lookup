@@ -27,7 +27,7 @@ interface JobRow {
 interface JobStatusResponse {
   job: {
     id: string;
-    status: "pending" | "running" | "done";
+    status: "pending" | "running" | "done" | "cancelled";
     total_rows: number;
     processed_rows: number;
   };
@@ -45,6 +45,7 @@ const STATUS_TILE_CLASS: Record<string, string> = {
   "MULTIPLE MATCHES": "tile-multi",
   "NOT FOUND": "tile-notfound",
   ERROR: "tile-error",
+  CANCELLED: "tile-notfound",
 };
 
 const STATUS_BADGE_CLASS: Record<string, string> = {
@@ -53,6 +54,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   "MULTIPLE MATCHES": "badge-multi",
   "NOT FOUND": "badge-notfound",
   ERROR: "badge-error",
+  CANCELLED: "badge-notfound",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -68,35 +70,55 @@ export default function JobStatusPage() {
   const jobId = params.id;
   const [data, setData] = useState<JobStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
 
     async function poll() {
       try {
         const res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
         const json = await res.json();
-        if (cancelled) return;
+        if (stopped) return;
         if (!res.ok) {
           setError(json.error ?? "Could not load job status.");
           return;
         }
         setData(json);
-        if (json.job.status !== "done") {
+        if (json.job.status !== "done" && json.job.status !== "cancelled") {
           timer = setTimeout(poll, POLL_MS);
         }
       } catch {
-        if (!cancelled) timer = setTimeout(poll, POLL_MS);
+        if (!stopped) timer = setTimeout(poll, POLL_MS);
       }
     }
     poll();
 
     return () => {
-      cancelled = true;
+      stopped = true;
       clearTimeout(timer);
     };
   }, [jobId]);
+
+  async function handleCancel() {
+    if (!confirm("Stop this search? Rows not yet started will be left out; anything already searched is kept.")) {
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Could not cancel the job.");
+        return;
+      }
+      const statusRes = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+      setData(await statusRes.json());
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   if (error) {
     return (
@@ -131,6 +153,8 @@ export default function JobStatusPage() {
       <p className="subtitle">
         {job.status === "done"
           ? "Done."
+          : job.status === "cancelled"
+          ? "Cancelled - rows already searched are kept below; the rest were skipped."
           : job.status === "running"
           ? "Processing..."
           : "Queued - waiting for the worker to pick this up."}
@@ -153,7 +177,13 @@ export default function JobStatusPage() {
           ))}
         </div>
 
-        {job.status === "done" && (
+        {(job.status === "pending" || job.status === "running") && (
+          <button className="danger-btn" onClick={handleCancel} disabled={cancelling}>
+            {cancelling ? "Cancelling..." : "Cancel search"}
+          </button>
+        )}
+
+        {(job.status === "done" || job.status === "cancelled") && (
           <div className="download-links">
             <a href={`/api/jobs/${jobId}/download`}>Download results CSV</a>
             {hasMultiMatches && (
