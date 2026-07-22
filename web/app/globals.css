@@ -101,10 +101,17 @@ h1 {
   gap: 8px;
 }
 
+.upload-shell {
+  max-width: 640px;
+}
+
 .file-input {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 32px 16px;
+  padding: 36px 16px;
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius);
   margin-bottom: 16px;
@@ -119,6 +126,11 @@ h1 {
 .file-input:hover {
   border-color: var(--primary);
   background: var(--primary-tint);
+}
+
+.file-input-icon {
+  color: var(--primary);
+  opacity: 0.75;
 }
 
 button {
@@ -410,7 +422,8 @@ tbody tr:hover td {
   margin-bottom: 7px;
 }
 
-.field-row select {
+.field-row select,
+.field-row input[type="date"] {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border-strong);
@@ -421,6 +434,7 @@ tbody tr:hover td {
 }
 
 .field-row select:focus,
+.field-row input[type="date"]:focus,
 .file-input:focus {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
@@ -430,4 +444,25 @@ tbody tr:hover td {
   display: flex;
   gap: 12px;
   margin-top: 8px;
+}
+
+.history-card {
+  margin-top: 32px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-row .field-row {
+  margin-bottom: 0;
+  min-width: 200px;
+}
+
+.clear-filters-btn {
+  padding: 11px 18px;
 }

@@ -26,9 +26,11 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS jobs (
     id              TEXT PRIMARY KEY,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    status          TEXT NOT NULL DEFAULT 'pending', -- pending | running | done
+    status          TEXT NOT NULL DEFAULT 'pending', -- pending | running | done | cancelled
     total_rows      INTEGER NOT NULL,
-    processed_rows  INTEGER NOT NULL DEFAULT 0
+    processed_rows  INTEGER NOT NULL DEFAULT 0,
+    county          TEXT NOT NULL DEFAULT '', -- denormalized from job_rows (one county per upload) so the
+    state           TEXT NOT NULL DEFAULT ''  -- history list on "/" can filter without joining job_rows
 );
 
 CREATE TABLE IF NOT EXISTS job_rows (

@@ -5,6 +5,38 @@ import { ColumnMapping, InputCsvError, parseLeadsCsv } from "@/lib/parseInput";
 
 export const runtime = "nodejs";
 
+// History list for the "/" page - recent searches, optionally filtered by
+// county/state and/or the calendar date they were created on. found_count
+// is a single aggregate joined in here (rather than a per-row follow-up
+// query) since that's what a user scanning past searches actually wants to
+// see at a glance - how many addresses it actually turned up.
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const county = searchParams.get("county") ?? "";
+  const state = searchParams.get("state") ?? "";
+  const date = searchParams.get("date") ?? ""; // YYYY-MM-DD
+
+  const db = getDb();
+  const result = await db.execute({
+    sql: `
+      SELECT j.id, j.created_at, j.status, j.total_rows, j.processed_rows,
+             j.county, j.state,
+             COALESCE(SUM(CASE WHEN r.result_status = 'FOUND' THEN 1 ELSE 0 END), 0) AS found_count
+      FROM jobs j
+      LEFT JOIN job_rows r ON r.job_id = j.id
+      WHERE (? = '' OR j.county = ?)
+        AND (? = '' OR j.state = ?)
+        AND (? = '' OR substr(j.created_at, 1, 10) = ?)
+      GROUP BY j.id
+      ORDER BY j.created_at DESC
+      LIMIT 50
+    `,
+    args: [county, county, state, state, date, date],
+  });
+
+  return NextResponse.json({ jobs: result.rows });
+}
+
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
@@ -42,8 +74,8 @@ export async function POST(request: NextRequest) {
   await db.batch(
     [
       {
-        sql: "INSERT INTO jobs (id, total_rows) VALUES (?, ?)",
-        args: [jobId, rows.length],
+        sql: "INSERT INTO jobs (id, total_rows, county, state) VALUES (?, ?, ?, ?)",
+        args: [jobId, rows.length, mapping.county, mapping.state],
       },
       ...rows.map((row, index) => ({
         sql: `INSERT INTO job_rows (job_id, row_index, owner_name_input, county, state, property_description)
