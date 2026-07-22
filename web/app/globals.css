@@ -466,3 +466,57 @@ tbody tr:hover td {
 .clear-filters-btn {
   padding: 11px 18px;
 }
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.history-header h3 {
+  margin: 0;
+}
+
+.history-header .danger-btn {
+  margin-top: 0;
+  padding: 9px 16px;
+}
+
+.count-pill {
+  display: inline-block;
+  background: var(--gray-bg);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+
+.checkbox-col {
+  width: 36px;
+}
+
+.checkbox-col input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.search-title {
+  font-weight: 600;
+}
+
+.search-subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
+
+tbody tr.row-selected td {
+  background: var(--primary-tint);
+}

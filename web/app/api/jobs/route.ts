@@ -37,6 +37,43 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ jobs: result.rows });
 }
 
+// Bulk-delete jobs (and their rows/candidates) from the history list.
+// Deletes are issued explicitly in dependency order rather than relying on
+// the schema's ON DELETE CASCADE, since that only fires for connections
+// with "PRAGMA foreign_keys = ON" - the worker's libsql connection sets
+// that (see db.get_connection()), but this Node client (lib/db.ts) doesn't,
+// so a bare "DELETE FROM jobs" here could silently leave orphaned rows.
+export async function DELETE(request: NextRequest) {
+  const body = await request.json().catch(() => null);
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((id: unknown) => typeof id === "string") : [];
+  if (ids.length === 0) {
+    return NextResponse.json({ error: "No job ids provided." }, { status: 400 });
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const db = getDb();
+  await db.batch(
+    [
+      {
+        sql: `DELETE FROM job_row_candidates
+              WHERE job_row_id IN (SELECT id FROM job_rows WHERE job_id IN (${placeholders}))`,
+        args: ids,
+      },
+      {
+        sql: `DELETE FROM job_rows WHERE job_id IN (${placeholders})`,
+        args: ids,
+      },
+      {
+        sql: `DELETE FROM jobs WHERE id IN (${placeholders})`,
+        args: ids,
+      },
+    ],
+    "write"
+  );
+
+  return NextResponse.json({ ok: true, deleted: ids.length });
+}
+
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");

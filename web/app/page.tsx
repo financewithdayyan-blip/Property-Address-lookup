@@ -96,6 +96,8 @@ export default function UploadPage() {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [historyCounty, setHistoryCounty] = useState("");
   const [historyDate, setHistoryDate] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let stopped = false;
@@ -111,7 +113,10 @@ export default function UploadPage() {
     fetch(`/api/jobs?${params.toString()}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
-        if (!stopped) setJobs(data.jobs ?? []);
+        if (!stopped) {
+          setJobs(data.jobs ?? []);
+          setSelectedIds(new Set());
+        }
       })
       .finally(() => {
         if (!stopped) setLoadingJobs(false);
@@ -121,6 +126,40 @@ export default function UploadPage() {
       stopped = true;
     };
   }, [historyCounty, historyDate]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => (prev.size === jobs.length ? new Set() : new Set(jobs.map((j) => j.id))));
+  }
+
+  async function handleDeleteSelected() {
+    const count = selectedIds.size;
+    if (count === 0) return;
+    if (!confirm(`Delete ${count} search${count === 1 ? "" : "es"}? This can't be undone.`)) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (res.ok) {
+        setJobs((prev) => prev.filter((j) => !selectedIds.has(j.id)));
+        setSelectedIds(new Set());
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const chosen = e.target.files?.[0] ?? null;
@@ -308,7 +347,14 @@ export default function UploadPage() {
       </div>
 
       <div className="card history-card">
-        <h3>Recent searches</h3>
+        <div className="history-header">
+          <h3>Recent searches {!loadingJobs && <span className="count-pill">{jobs.length}</span>}</h3>
+          {selectedIds.size > 0 && (
+            <button type="button" className="danger-btn" onClick={handleDeleteSelected} disabled={deleting}>
+              {deleting ? "Deleting..." : `Delete selected (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
 
         <div className="filter-row">
           <div className="field-row">
@@ -353,33 +399,53 @@ export default function UploadPage() {
             <table>
               <thead>
                 <tr>
+                  <th className="checkbox-col">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === jobs.length && jobs.length > 0}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th>Search</th>
                   <th>Date</th>
-                  <th>County</th>
                   <th>Status</th>
-                  <th>Progress</th>
                   <th>Found</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((j) => (
-                  <tr key={j.id}>
-                    <td>{formatDate(j.created_at)}</td>
-                    <td>
-                      {j.county}, {j.state}
-                    </td>
-                    <td>
-                      <span className={`badge ${JOB_STATUS_BADGE[j.status]}`}>{JOB_STATUS_LABEL[j.status]}</span>
-                    </td>
-                    <td>
-                      {j.processed_rows} / {j.total_rows}
-                    </td>
-                    <td>{j.found_count}</td>
-                    <td>
-                      <Link href={`/jobs/${j.id}`}>View &rarr;</Link>
-                    </td>
-                  </tr>
-                ))}
+                {jobs.map((j) => {
+                  const processed = Math.min(j.processed_rows, j.total_rows);
+                  return (
+                    <tr key={j.id} className={selectedIds.has(j.id) ? "row-selected" : ""}>
+                      <td className="checkbox-col">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(j.id)}
+                          onChange={() => toggleSelected(j.id)}
+                          aria-label={`Select search from ${j.county}, ${j.state}`}
+                        />
+                      </td>
+                      <td>
+                        <div className="search-title">
+                          {j.county}, {j.state}
+                        </div>
+                        <div className="search-subtitle">
+                          {j.total_rows} record{j.total_rows === 1 ? "" : "s"} &middot; {processed} processed
+                        </div>
+                      </td>
+                      <td>{formatDate(j.created_at)}</td>
+                      <td>
+                        <span className={`badge ${JOB_STATUS_BADGE[j.status]}`}>{JOB_STATUS_LABEL[j.status]}</span>
+                      </td>
+                      <td>{j.found_count}</td>
+                      <td>
+                        <Link href={`/jobs/${j.id}`}>View &rarr;</Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
