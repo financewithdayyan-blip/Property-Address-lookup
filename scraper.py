@@ -111,6 +111,8 @@ def _request_with_retry(
     *,
     params: Optional[dict] = None,
     data: Optional[dict] = None,
+    max_retries: int = MAX_RETRIES,
+    retry_wait_seconds: int = RETRY_WAIT_SECONDS,
 ) -> requests.Response:
     logger = get_logger()
     attempt = 0
@@ -126,25 +128,25 @@ def _request_with_retry(
                 timeout=REQUEST_TIMEOUT,
             )
         except requests.RequestException as exc:
-            if attempt >= MAX_RETRIES:
+            if attempt >= max_retries:
                 raise ScraperError(f"Network error after {attempt} attempts: {exc}") from exc
             logger.warning(
                 "Network error on attempt %d/%d for %s: %s - retrying in %ds",
-                attempt, MAX_RETRIES, url, exc, RETRY_WAIT_SECONDS,
+                attempt, max_retries, url, exc, retry_wait_seconds,
             )
-            time.sleep(RETRY_WAIT_SECONDS)
+            time.sleep(retry_wait_seconds)
             continue
 
         if resp.status_code in RETRY_STATUS_CODES:
-            if attempt >= MAX_RETRIES:
+            if attempt >= max_retries:
                 raise ScraperError(
                     f"HTTP {resp.status_code} from {url} after {attempt} attempts"
                 )
             logger.warning(
                 "HTTP %d from %s (attempt %d/%d) - waiting %ds before retry",
-                resp.status_code, url, attempt, MAX_RETRIES, RETRY_WAIT_SECONDS,
+                resp.status_code, url, attempt, max_retries, retry_wait_seconds,
             )
-            time.sleep(RETRY_WAIT_SECONDS)
+            time.sleep(retry_wait_seconds)
             continue
 
         if resp.status_code >= 400:
@@ -390,11 +392,20 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
     # ArcGIS REST endpoints accept the same params as a POST body, which
     # has no such length limit - but as a second line of defense (an
     # even longer name, or a server with its own WHERE-clause size cap
-    # regardless of transport), if the request still fails with a 4xx,
-    # drop the last word and try again with a shorter name rather than
-    # giving up the whole row. A 4xx fails fast (unlike a real network
-    # outage, which _request_with_retry already retries 3x with
-    # backoff), so this is cheap even in the worst case.
+    # regardless of transport, or a server that's simply slow to evaluate
+    # a WHERE clause with dozens of OR'd LIKE conditions - found live on
+    # Lee County: a 2-3 co-owner concatenated name routinely timed out at
+    # 20s), drop the last word and try again with a shorter name rather
+    # than giving up the whole row.
+    #
+    # max_retries=2, retry_wait_seconds=5 here (vs. the default 3x/30s):
+    # once a WHERE clause this size is timing out, it's almost always the
+    # query's own complexity, not a transient blip - retrying the exact
+    # same oversized request 3 times at 30s apart (found live: up to ~2
+    # minutes for one row) just delays reaching the fix. One quick retry
+    # still absorbs a genuine one-off network hiccup; anything past that
+    # falls through to shortening, which is both faster to fail and more
+    # likely to actually succeed.
     tokens = [t for t in owner_name.strip().split() if t]
     search_name = owner_name
     while True:
@@ -408,10 +419,14 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
         }
         logger.debug("ArcGIS query: %s where=%r", url, where)
         try:
-            resp = _request_with_retry(session, "POST", url, data=params)
+            resp = _request_with_retry(
+                session, "POST", url, data=params, max_retries=2, retry_wait_seconds=5
+            )
             break
         except ScraperError as exc:
-            if "HTTP 4" not in str(exc) or len(tokens) <= 2:
+            msg = str(exc)
+            is_shortenable = "HTTP 4" in msg or "Network error" in msg or "timed out" in msg
+            if not is_shortenable or len(tokens) <= 2:
                 raise
             tokens = tokens[:-1]
             search_name = " ".join(tokens)
