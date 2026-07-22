@@ -70,6 +70,46 @@ def classify(score: float) -> str:
     return "NO_MATCH"
 
 
+def _best_window_score(input_tokens: list[str], norm_found: str) -> float:
+    """Best token_sort_ratio between norm_found and any contiguous slice of
+    input_tokens sized close to norm_found's own token count.
+
+    The input name column is routinely several owners concatenated with no
+    separator at all (e.g. "PEREZ DIANA J PEREZ-NUNEZ DIANA" for two owners,
+    or "KNAPIK JOHN RICHARD RIZZO MICHAEL RIZZO ERIC RIZZO RENEE" for four) -
+    found live, repeatedly. A single found_name is only ever one of those
+    owners, so comparing it against the *whole* input string dilutes the
+    score by however many unrelated tokens the other owners contribute, even
+    when found_name is an exact match for a contiguous piece of the input.
+    Scoring every same-length-ish window instead and keeping the best one
+    finds that piece regardless of where in the string it sits - covers a
+    match at the front (Perez), the back, or the middle (an earlier live
+    case: "ESCOBAR STEVEN MUNOZ DIAZ VALENTINA" only matched via the middle
+    pair "DIAZ VALENTINA") without needing to know in advance which.
+
+    Window size has a floor of 2 tokens (never a bare single token) so this
+    can't manufacture a false match out of one shared surname alone -
+    classify_and_build_row()'s CLEAR_WINNER_MARGIN and the legal-description
+    cross-check are the remaining backstops against a coincidental partial
+    match to the wrong person.
+    """
+    found_token_count = len(norm_found.split())
+    n = len(input_tokens)
+    if n <= found_token_count:
+        return 0.0
+
+    best = 0.0
+    for size in {max(2, found_token_count - 1), found_token_count, found_token_count + 1}:
+        if size >= n:
+            continue
+        for start in range(n - size + 1):
+            window = " ".join(input_tokens[start:start + size])
+            score = fuzz.token_sort_ratio(window, norm_found)
+            if score > best:
+                best = score
+    return best
+
+
 def match_names(input_name: str, found_name: str) -> MatchResult:
     """Fuzzy-compare two owner names and classify the result.
 
@@ -82,11 +122,17 @@ def match_names(input_name: str, found_name: str) -> MatchResult:
     couples/joint ownership). Each co-owner is scored independently and
     the best score wins, so a strong match to owner #1 isn't diluted by an
     unrelated owner #2's name pulling the combined-string ratio down.
+
+    Symmetrically, the *input* name can also be several owners concatenated
+    together - see _best_window_score() - so each candidate is scored both
+    against the whole input and against the best-matching same-length-ish
+    window of it, keeping whichever score is higher.
     """
     norm_input = normalize_name(input_name)
     if not norm_input:
         return MatchResult(0.0, "NO_MATCH", norm_input, normalize_name(found_name))
 
+    input_tokens = norm_input.split()
     candidates = [c.strip() for c in found_name.split("&")] if found_name else [found_name]
     best: MatchResult | None = None
     for candidate in candidates:
@@ -94,6 +140,7 @@ def match_names(input_name: str, found_name: str) -> MatchResult:
         if not norm_found:
             continue
         score = fuzz.token_sort_ratio(norm_input, norm_found)
+        score = max(score, _best_window_score(input_tokens, norm_found))
         if best is None or score > best.score:
             best = MatchResult(score, classify(score), norm_input, norm_found)
 
