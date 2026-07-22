@@ -379,25 +379,46 @@ def _search_arcgis_query(config: dict, owner_name: str, session: requests.Sessio
     logger = get_logger()
     arc = config["arcgis"]
     owner_field = arc["owner_field"]
-    where = _build_owner_where(arc.get("owner_name_fields", [owner_field]), owner_name)
-
-    params = {
-        "where": where,
-        "outFields": ",".join(arc["out_fields"]),
-        "f": "json",
-        "resultRecordCount": arc.get("max_results", 50),
-        "returnGeometry": "false",
-    }
+    owner_fields = arc.get("owner_name_fields", [owner_field])
     url = arc["query_url"]
-    logger.debug("ArcGIS query: %s where=%r", url, where)
+
     # POST, not GET: a long concatenated name (several co-owners run
     # together with no separator) can push _owner_hypotheses() past a
     # dozen candidate pairs, and the resulting WHERE clause easily
     # exceeds URL length limits as a GET query string - found live, this
     # failed outright with an HTTP 404 rather than just missing a match.
     # ArcGIS REST endpoints accept the same params as a POST body, which
-    # has no such length limit.
-    resp = _request_with_retry(session, "POST", url, data=params)
+    # has no such length limit - but as a second line of defense (an
+    # even longer name, or a server with its own WHERE-clause size cap
+    # regardless of transport), if the request still fails with a 4xx,
+    # drop the last word and try again with a shorter name rather than
+    # giving up the whole row. A 4xx fails fast (unlike a real network
+    # outage, which _request_with_retry already retries 3x with
+    # backoff), so this is cheap even in the worst case.
+    tokens = [t for t in owner_name.strip().split() if t]
+    search_name = owner_name
+    while True:
+        where = _build_owner_where(owner_fields, search_name)
+        params = {
+            "where": where,
+            "outFields": ",".join(arc["out_fields"]),
+            "f": "json",
+            "resultRecordCount": arc.get("max_results", 50),
+            "returnGeometry": "false",
+        }
+        logger.debug("ArcGIS query: %s where=%r", url, where)
+        try:
+            resp = _request_with_retry(session, "POST", url, data=params)
+            break
+        except ScraperError as exc:
+            if "HTTP 4" not in str(exc) or len(tokens) <= 2:
+                raise
+            tokens = tokens[:-1]
+            search_name = " ".join(tokens)
+            logger.warning(
+                "%s: ArcGIS query failed (%s) - retrying with a shorter name %r",
+                config.get("display_name", "county"), exc, search_name,
+            )
 
     try:
         data = resp.json()
